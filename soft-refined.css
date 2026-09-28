@@ -1,0 +1,680 @@
+/* Last layer. CSS tiles + existing SVG. No soft-icons.png. */
+
+:root {
+  --tile-hi: inset 1px 2px 4px rgba(255, 255, 255, .52);
+  --tile-drop: 0 5px 12px rgba(72, 58, 110, .19);
+  --ink-label: #2a2833;
+  --ink-aux: #3a3644;
+}
+
+body {
+  font-size: 16px;
+  color: var(--ink-label);
+}
+
+body:before {
+  background:
+    linear-gradient(rgba(246, 244, 250, .84), rgba(244, 242, 248, .8)),
+    url("/images/soft-audio.png") center / cover;
+  filter: blur(16px);
+}
+
+/* Kill sprite pseudos. Attribute rules match soft-components specificity. */
+.brand-icon:before,
+.stat-icon:before,
+.stat-icon.clock:before,
+.stat-icon.book:before,
+.automation-orb:before,
+.nav-item[data-page=home]:before,
+.nav-item[data-page=all]:before,
+.nav-item[data-page=timeline]:before,
+.nav-item[data-page=review]:before,
+.nav-item[data-page=favorites]:before,
+.nav-item[data-action=automation]:before {
+  content: none;
+  background: none;
+  background-image: none;
+  display: none;
+}
+
+.brand-icon > svg,
+.stat-icon > svg,
+.automation-orb > svg,
+.nav-item[data-page=home] > svg,
+.nav-item[data-page=all] > svg,
+.nav-item[data-page=timeline] > svg,
+.nav-item[data-page=review] > svg,
+.nav-item[data-page=favorites] > svg,
+.nav-item[data-action=automation] > svg {
+  visibility: visible;
+  display: block;
+}
+
+.sidebar > .brand .brand-icon,
+.brand-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 14px;
+  color: #fff;
+  background: linear-gradient(155deg, #e4dafc 0%, #b7a4ec 58%, #a892e4 100%);
+  box-shadow: var(--tile-hi), var(--tile-drop);
+  filter: none;
+}
+
+.brand-icon > svg {
+  width: 24px;
+  height: 24px;
+  color: #fff;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  filter: none;
+}
+
+.stat-icon,
+.automation-orb {
+  width: 36px;
+  height: 36px;
+  margin: 0 0 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 11px;
+  color: #fff;
+  background: linear-gradient(155deg, #e4dafc 0%, #b7a4ec 58%, #a892e4 100%);
+  box-shadow: var(--tile-hi), var(--tile-drop);
+  filter: none;
+}
+
+.automation-orb {
+  margin: 0;
+}
+
+.stat-icon > svg,
+.automation-orb > svg {
+  width: 18px;
+  height: 18px;
+  color: #fff;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  filter: none;
+}
+
+.stat-icon.clock {
+  background: linear-gradient(155deg, #ffe6cc 0%, #f2b56e 58%, #e8a45c 100%);
+}
+
+.stat-icon.book {
+  background: linear-gradient(155deg, #daf6ee 0%, #86d4be 58%, #6ec6ad 100%);
+}
+
+.sidebar nav .nav-item[data-page=home],
+.sidebar nav .nav-item[data-page=all],
+.sidebar nav .nav-item[data-page=timeline],
+.sidebar nav .nav-item[data-page=review],
+.sidebar nav .nav-item[data-page=favorites],
+.nav-item[data-action=automation] {
+  padding-left: 9px;
+}
+
+.nav-item > svg,
+.category-nav .nav-item > svg {
+  width: 34px;
+  height: 34px;
+  padding: 8px;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(155deg, #e4dafc 0%, #b7a4ec 58%, #a892e4 100%);
+  box-shadow: var(--tile-hi), var(--tile-drop);
+  filter: none;
+}
+
+.nav-item[data-page=all] > svg {
+  background: linear-gradient(155deg, #ffe6cc 0%, #f2b56e 58%, #e8a45c 100%);
+}
+
+.nav-item[data-page=timeline] > svg {
+  background: linear-gradient(155deg, #daf6ee 0%, #86d4be 58%, #6ec6ad 100%);
+}
+
+.nav-item[data-page=review] > svg {
+  background: linear-gradient(155deg, #d9f1f8 0%, #86c6da 58%, #6eb6ce 100%);
+}
+
+.nav-item[data-page=favorites] > svg,
+.nav-item[data-action=backup] > svg {
+  background: linear-gradient(155deg, #f0eef4 0%, #c8c4d2 58%, #b7b3c2 100%);
+}
+
+.category-nav .nav-item:nth-child(4n+2) > svg {
+  background: linear-gradient(155deg, #daf6ee 0%, #86d4be 58%, #6ec6ad 100%);
+}
+
+.category-nav .nav-item:nth-child(4n+3) > svg {
+  background: linear-gradient(155deg, #ffe6cc 0%, #f2b56e 58%, #e8a45c 100%);
+}
+
+.category-nav .nav-item:nth-child(4n) > svg {
+  background: linear-gradient(155deg, #d9f1f8 0%, #86c6da 58%, #6eb6ce 100%);
+}
+
+.record-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: currentColor !important;
+  box-shadow: var(--tile-hi), var(--tile-drop);
+  filter: none;
+}
+
+.record-icon > svg {
+  width: 18px;
+  height: 18px;
+  color: #fff;
+  stroke: #fff;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.empty-state > svg,
+.storage-card svg {
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(155deg, #f0eef4 0%, #c8c4d2 58%, #b7b3c2 100%);
+  box-shadow: var(--tile-hi), var(--tile-drop);
+}
+
+.btn > svg,
+.btn-primary > svg,
+.text-btn > svg,
+.icon-btn > svg,
+.chip > svg,
+.dropzone > svg,
+.search-box > svg,
+.automation-flow svg {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  filter: none;
+}
+
+/* Buttons: light 3D rounded rects. Icon buttons stay small squares. */
+.btn,
+.icon-btn,
+.text-btn,
+.chip,
+.detail-tabs button,
+.import-tabs button,
+.demo-banner button {
+  color: var(--ink-label);
+  font-size: 16px;
+  line-height: 1.35;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .72);
+  background: linear-gradient(165deg, #fff 0%, #f4f0fb 100%);
+  box-shadow: inset 1px 1px 0 #fff, 0 3px 8px rgba(90, 70, 120, .1);
+  filter: none;
+}
+
+.btn,
+.text-btn,
+.chip,
+.detail-tabs button,
+.import-tabs button {
+  width: auto;
+  height: auto;
+  min-height: 38px;
+  padding: 8px 14px;
+}
+
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-btn,
+.top-actions .icon-btn,
+.modal .icon-btn {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 12px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.btn-primary,
+.hero .btn-primary {
+  color: #fff;
+  background: linear-gradient(165deg, #8465ae 0%, #695092 100%);
+  border-color: rgba(255, 255, 255, .4);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .5), 0 4px 10px rgba(110, 84, 170, .16);
+}
+
+.btn-primary:hover,
+.hero .btn-primary:hover {
+  background: linear-gradient(165deg, #795ba3 0%, #614689 100%);
+  color: #fff;
+}
+
+.btn-primary svg,
+.hero .btn-primary svg {
+  color: #fff;
+}
+
+.chip.active,
+.detail-tabs button.active,
+.import-tabs button.active {
+  color: #3a3058;
+  background: linear-gradient(165deg, #f3eeff, #e3daf8);
+  border-color: #d9cef0;
+}
+
+.icon-btn.is-favorite,
+.icon-btn.active {
+  color: #6a4314;
+  background: linear-gradient(165deg, #fff6e4, #f6deb4);
+}
+
+.btn-danger,
+.icon-btn.danger {
+  color: #8d302c;
+  background: linear-gradient(165deg, #fff8f6, #f8e4e0);
+}
+
+.calendar-days > button {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, .7);
+  background: linear-gradient(165deg, #fff, #f3f0f8);
+  box-shadow: inset 1px 1px 0 #fff, 0 2px 5px rgba(90, 70, 120, .08);
+  color: var(--ink-label);
+  font-size: 13px;
+}
+
+.calendar-days > button.today,
+.calendar-days > button.selected {
+  color: #fff;
+  background: linear-gradient(165deg, #cbbaf2, #9076d6);
+  border-color: rgba(255, 255, 255, .35);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .45), 0 3px 7px rgba(110, 84, 170, .16);
+}
+
+/* Labels stay dark. Category ink on the span is inline; force readable text. */
+.sidebar .nav-item,
+.sidebar .nav-item > span,
+.category-nav .nav-item,
+.category-nav .nav-item > span,
+.nav-label,
+.brand-sub,
+.stat-label,
+.tag,
+.status-tag,
+.snippet-tag,
+.ai-badge,
+.transcription-badge {
+  color: var(--ink-label);
+  text-shadow: none;
+  opacity: 1;
+}
+
+.category-nav .nav-item > span,
+.tag {
+  color: var(--ink-label) !important;
+}
+
+.nav-item.active,
+.nav-item.active > span {
+  color: #3a3058;
+}
+
+.brand-sub,
+.stat-note,
+.stat-label,
+.record-meta,
+.detail-meta,
+.tag,
+.status-tag,
+.snippet-tag,
+.ai-badge,
+.transcription-badge,
+.local-indicator,
+.calendar-caption,
+.review-number span,
+.nav-label,
+.eyebrow,
+.hero-kicker,
+.count,
+.storage-card,
+.storage-card strong,
+.page-footer,
+.section-head h2 > span,
+.section-head h2 small,
+.breadcrumbs,
+.top-date,
+.form-note,
+.field small,
+.field label,
+.sidebar-signature {
+  font-size: 13px;
+  color: var(--ink-aux);
+}
+
+.page-heading p,
+.hero p,
+.record-excerpt,
+.modal-head p,
+.knowledge-card p,
+.knowledge-card li,
+.empty-state p,
+.detail-section p,
+.detail-section li,
+.automation-copy p,
+.demo-banner,
+.connection-error,
+.sidebar .nav-item,
+.btn,
+.chip,
+.text-btn,
+.search-box input,
+.field input,
+.field textarea,
+.field select,
+.category-edit-row input,
+.category-edit-row select {
+  font-size: 16px;
+}
+
+.hero p,
+.page-heading p,
+.record-excerpt,
+.modal-head p,
+.empty-state p {
+  color: #322e3c;
+}
+
+.hero {
+  background-color: #f7f4fb;
+  background-image: url("/images/soft-audio.png");
+  background-position: 82% center;
+  background-size: cover;
+  min-height: 240px;
+}
+
+.hero:before {
+  background: linear-gradient(100deg, rgba(250, 247, 252, .94) 0%, rgba(247, 244, 252, .9) 48%, rgba(247, 244, 252, .74) 100%);
+}
+
+.hero-copy {
+  max-width: min(100%, 640px);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role=button]:focus-visible,
+.calendar-days > button:focus-visible,
+.sidebar button:focus-visible,
+.modal button:focus-visible {
+  outline: 3px solid #6e56b4;
+  outline-offset: 2px;
+}
+
+.sidebar button:focus-visible {
+  outline-offset: -3px;
+}
+
+.search-box:focus-within {
+  outline: 3px solid #6e56b4;
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .sidebar nav .nav-item[data-page=home],
+  .sidebar nav .nav-item[data-page=all],
+  .sidebar nav .nav-item[data-page=timeline],
+  .sidebar nav .nav-item[data-page=review],
+  .sidebar nav .nav-item[data-page=favorites] {
+    padding-left: 9px;
+  }
+
+  .sidebar > .brand .brand-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .category-nav .nav-item > svg,
+  .nav-item > svg {
+    width: 32px;
+    height: 32px;
+    padding: 7px;
+  }
+
+  .stat-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .automation-strip .automation-orb {
+    display: grid;
+    width: 34px;
+    height: 34px;
+  }
+
+  .hero:before {
+    background: linear-gradient(180deg, rgba(250, 247, 252, .94), rgba(247, 244, 252, .82));
+  }
+
+  .hero-actions,
+  .automation-strip,
+  .topbar,
+  .page-heading {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .top-actions .icon-btn {
+    min-width: 38px;
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 390px) {
+  .sidebar,
+  .workspace,
+  .main,
+  .modal,
+  .hero,
+  .automation-strip,
+  .record-card,
+  .page-heading,
+  .topbar {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .modal {
+    width: calc(100vw - 16px);
+  }
+
+  .modal-head,
+  .modal-body,
+  .modal-footer {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .stats-grid,
+  .right-column,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-copy {
+    max-width: 100%;
+  }
+
+  .hero-actions,
+  .folder-input,
+  .modal-footer,
+  .record-tags {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .btn,
+  .chip,
+  .text-btn,
+  .folder-input .btn,
+  .page-heading > .btn {
+    white-space: normal;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .import-queue-row strong,
+  .modal-head h2,
+  .record-title {
+    overflow-wrap: anywhere;
+  }
+}
+/* Eight primary destinations must leave room for categories and settings. */
+@media(min-width:761px){.sidebar{padding-top:16px;padding-bottom:12px}.sidebar .brand{padding-bottom:12px}.sidebar>nav:first-of-type{flex-shrink:0;max-height:48vh;overflow:auto;scrollbar-width:thin}.sidebar>nav:first-of-type .nav-item{min-height:42px;margin:2px 0;padding-top:4px;padding-bottom:4px}.sidebar .nav-label{margin:8px 9px}.sidebar-bottom .storage-card{display:none}.sidebar-bottom{padding-top:5px}.sidebar-bottom .nav-item{min-height:43px;margin:2px 0;padding:4px 9px}.category-nav{min-height:80px}.category-nav .nav-item{min-height:42px;margin:2px 0;padding:4px 9px}.sidebar .category-manage{font-size:14px;padding:8px 4px;margin-top:6px}.nav-item>svg{flex-shrink:0}}
+/* Motion feel layer: press feedback, staggered entrance on click reveal, backdrop fade, search clear. */
+.btn,.icon-btn,.text-btn,.chip,.nav-item{transition:transform .12s var(--ease-out),box-shadow .2s var(--ease-out),background .2s var(--ease-out),color .2s var(--ease-out),border-color .2s var(--ease-out)}
+.btn:active,.icon-btn:active,.text-btn:active,.chip:active,.nav-item:active{transform:translateY(1px) scale(.97)}
+.record-card,.knowledge-card,.panel{transition:transform .18s var(--ease-out),box-shadow .18s var(--ease-out)}
+.record-card:active,.knowledge-card:active,.panel:active{transform:translateY(1px) scale(.998)}
+@keyframes listIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>*{animation:listIn .4s var(--ease-out) both}
+.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:nth-child(2){animation-delay:.04s}
+.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:nth-child(3){animation-delay:.08s}
+.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:nth-child(4){animation-delay:.12s}
+.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:nth-child(5){animation-delay:.16s}
+.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:nth-child(6){animation-delay:.2s}
+.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:nth-child(n+7){animation-delay:.24s}
+/* fill both would pin transform:none above :hover/:active after the entrance (animation beats normal cascade); interactive children release the forwards fill. */
+.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:is(.record-card,.knowledge-card,.chip,.panel){animation-fill-mode:backwards}
+@keyframes backdropIn{from{opacity:0}to{opacity:1}}
+.modal::backdrop{background:#241f3a59;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:backdropIn .3s ease-out both}
+.search-box{position:relative}
+.search-box input{padding-right:34px}
+.search-box .search-clear{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:26px;height:26px;min-width:26px;min-height:26px;padding:0;border-radius:50%;color:#70657e;background:transparent;border:none;box-shadow:none;display:flex;align-items:center;justify-content:center}
+.search-box .search-clear:hover{background:#efeaf8;color:#433c54}
+/* Quick-find palette: soft-glass sibling of .modal, click-driven entry only (no shortcut hints). */
+.palette{width:min(640px,calc(100vw - 32px));margin:12vh auto auto;padding:0;border:1px solid #fff;border-radius:18px;overflow:hidden;background:linear-gradient(145deg,#fefefffa,#f2eff9fa);box-shadow:0 25px 85px #3b31573d;color:#292936}
+.palette::backdrop{background:#241f3a59;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:backdropIn .3s ease-out both}
+.palette-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid #e6e1f0}
+.palette-head svg{flex:none;color:#72549e}
+.palette-head input{flex:1;min-width:0;border:0;background:transparent;outline:none;font-size:16px;color:#383142}
+.palette-head input::placeholder{color:#8d87a0}
+.palette-head .icon-btn{flex:none}
+.palette-body{max-height:56vh;overflow:auto;padding:8px}
+.palette-section{font-size:11px;letter-spacing:.5px;color:#74707f;padding:10px 10px 4px}
+.palette-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;border:0;background:transparent;border-radius:12px;cursor:pointer;color:#353340;font-size:15px}
+.palette-row:hover,.palette-row:focus-visible{background:#f1ecfa}
+.palette-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.palette-row small{color:#71697e;font-size:12px;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+.palette-row svg{flex:none;color:#72549e}
+.palette-empty{color:#71697e;text-align:center;padding:28px 0}
+.toast .toast-action{margin-left:14px;background:#ffffff2e;border:1px solid #ffffff59;color:#fff;border-radius:8px;padding:4px 14px;font-size:13px;cursor:pointer}
+.toast.show .toast-action{pointer-events:auto}
+.toast .toast-action:hover{background:#ffffff4d}
+/* Recording compound interest: daily digest card, per-day digest, value tiers, gem re-reads. */
+.digest-card{border:1px solid #fffffff0;border-radius:14px;background:var(--glass);box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);padding:20px 22px;margin-bottom:20px}
+.digest-card .section-head{margin-bottom:12px}
+.digest-card h2{font-size:19px}
+.digest-text{white-space:pre-line;font-size:15px;line-height:1.95;color:#39344c}
+.digest-hint{margin:0;font-size:14px;line-height:1.8;color:#6f6a84}
+.day-digest{white-space:pre-line;font-size:14px;line-height:1.9;color:#48405f;background:#eeeafa;border:1px solid #ddd2f3;border-radius:10px;padding:12px 16px;margin-bottom:15px}
+.timeline-group h2{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
+.timeline-group h2 .day-digest-btn{margin-left:auto;font-size:13px;min-height:32px;padding:5px 12px}
+.value-chip-row{display:flex;flex-wrap:wrap;gap:9px}
+.value-chip{display:inline-flex;align-items:center;min-height:38px;padding:8px 15px;border-radius:999px;font-size:14px;color:var(--ink-label);border:1px solid rgba(255,255,255,.72);background:linear-gradient(165deg,#fff 0%,#f4f0fb 100%);box-shadow:inset 1px 1px 0 #fff,0 3px 8px rgba(90,70,120,.1);cursor:pointer;transition:background .2s var(--ease-out),border-color .2s var(--ease-out),box-shadow .2s var(--ease-out)}
+.value-chip:hover{border-color:#d5c8f2}
+.value-chip.active{color:#3a3058;border-color:transparent;background:linear-gradient(165deg,#f3eeff,#e3daf8) padding-box,linear-gradient(135deg,#8465ae,#c9b8ef) border-box;box-shadow:inset 1px 1px 0 rgba(255,255,255,.55),0 3px 8px rgba(110,84,170,.18)}
+.gem-tag{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:5px;font-size:12px;color:#a07b2d;background:#f8efd8;border:1px solid #e6cf97}
+.gem-tag svg{width:12px;height:12px}
+.record-card.gem{border-left:3px solid #d8b45f}
+.review-count{font-size:12px;color:#6f6a84}
+.record-card .review-gem-btn{flex-shrink:0;align-self:center;min-height:34px;padding:6px 13px;font-size:14px}
+/* Gem review reminder on the workspace: glass sibling of .digest-card with the gold-brown gem accent. */
+.review-reminder{border:1px solid #fffffff0;border-left:3px solid #d8b45f;border-radius:14px;background:var(--glass);box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);padding:16px 22px 10px;margin-bottom:20px}
+.review-reminder .section-head{margin-bottom:8px}
+.review-reminder .section-head h2{font-size:19px}
+.review-reminder-row{display:flex;align-items:center;gap:12px;padding:9px 0;font-size:15px;color:#39344c}
+.review-reminder-row+.review-reminder-row{border-top:1px solid #efeaf7}
+.review-reminder-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.review-reminder-row .review-gem-btn{flex-shrink:0;min-height:34px;padding:6px 13px;font-size:14px}
+/* Weekly digest reuses .digest-card; only the overdue check-in rows below need their own rules. */
+/* Gem action loop: checkable rows after the compound-interest list. */
+.action-empty{margin:0 0 20px;font-size:14px;line-height:1.8;color:#6f6a84}
+.action-list{display:flex;flex-direction:column;margin-bottom:20px}
+.action-row{display:flex;align-items:flex-start;gap:12px;padding:11px 2px;font-size:15px;color:#39344c}
+.action-row+.action-row{border-top:1px solid #efeaf7}
+.action-check{flex-shrink:0;width:20px;height:20px;min-width:20px;min-height:20px;aspect-ratio:auto;padding:0;margin-top:3px;border:1.6px solid #b9aed2;border-radius:50%;background:transparent;box-shadow:none;position:relative;display:grid;place-items:center;transition:background .2s var(--ease-out),border-color .2s var(--ease-out)}
+.action-check:hover{border-color:#8465ae;background:#f1ecfa}
+.action-row.done .action-check{border-color:#8465ae;background:linear-gradient(160deg,#9a7cc7,#7d5fae)}
+.action-row.done .action-check:before{content:'✓';color:#fff;font-size:11px;font-weight:700;line-height:1}
+.action-copy{display:flex;flex-direction:column;gap:3px;min-width:0}
+.action-text{line-height:1.6;overflow-wrap:anywhere}
+.action-copy small{font-size:12px;color:#8d87a0}
+.action-row.done .action-text{text-decoration:line-through;text-decoration-color:#b9aed2;color:#8d87a0}
+/* Monthly digest card, markdown export buttons, gem tag system. */
+.export-btn{min-height:30px;padding:5px 12px;font-size:13px;border-radius:10px;color:#6f6a84}
+.export-btn:hover{color:#3a3058;border-color:#d5c8f2}
+.gem-tag-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:-4px 0 16px}
+.gem-tag-label{font-size:12px;color:#8d87a0}
+.gem-tag-chip{display:inline-flex;align-items:center;min-height:27px;padding:3px 11px;border-radius:999px;font-size:12px;color:var(--ink-label);border:1px solid rgba(255,255,255,.72);background:linear-gradient(165deg,#fff 0%,#f4f0fb 100%);box-shadow:inset 1px 1px 0 #fff,0 2px 5px rgba(90,70,120,.09);cursor:pointer;transition:background .2s var(--ease-out),border-color .2s var(--ease-out),box-shadow .2s var(--ease-out)}
+.gem-tag-chip:hover{border-color:#d5c8f2}
+.gem-tag-chip.active{color:#3a3058;border-color:transparent;background:linear-gradient(165deg,#f3eeff,#e3daf8) padding-box,linear-gradient(135deg,#8465ae,#c9b8ef) border-box;box-shadow:inset 1px 1px 0 rgba(255,255,255,.55),0 2px 6px rgba(110,84,170,.18)}
+.gem-mini-tag{display:inline-flex;align-items:center;padding:2px 7px;border-radius:5px;font-size:11px;color:#a07b2d;background:#f8efd8;border:1px solid #e6cf97}
+.tag-filter-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:-6px 0 14px}
+.tag-filter-row .chip{min-height:30px;padding:4px 13px;font-size:13px;border-radius:10px}
+/* Yearly digest card reuses .digest-card wholesale; .yearly-card kept as a no-diff hook. */
+/* Month heatmap on the daily-footprint page: digest-card glass family + 7-col heat grid. */
+.heatmap-card{border:1px solid #fffffff0;border-radius:14px;background:var(--glass);box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);padding:18px 22px;margin-bottom:20px}
+.heat-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px;margin-bottom:12px}
+.heat-head h2{margin:0;font-size:19px;color:#322e3c}
+.heat-head span{font-size:13px;color:#6f6a84}
+.heat-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.heat-grid+.heat-grid{margin-top:6px}
+.heat-weekday{font-size:11px;color:#8d87a0;text-align:center;padding:2px 0}
+.heat-cell{aspect-ratio:1;display:grid;place-items:center;padding:0;border:0;border-radius:8px;font-size:13px;font-weight:600;color:#4a3f66;background:#efeaf6;box-shadow:none;cursor:pointer;transition:transform .12s var(--ease-out),box-shadow .2s var(--ease-out),background .2s var(--ease-out)}
+.heat-cell:hover{box-shadow:inset 0 0 0 2px #ffffffb0,0 2px 6px rgba(110,84,170,.22)}
+.heat-cell:active{transform:translateY(1px) scale(.95)}
+.h0{background:#efeaf6}
+.h1{background:#d9ccf2}
+.h2{background:#b39ae6}
+.h3{background:#8465ae;color:#fff}
+.future{opacity:.35;cursor:default}
+/* Random gem flash: digest-card glass sibling with the purple left bar (review reminder is gold). */
+.gem-flash{border:1px solid #fffffff0;border-left:3px solid #8465ae;border-radius:14px;background:var(--glass);box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);padding:16px 22px;margin-bottom:20px}
+.gem-flash .section-head{margin-bottom:8px}
+.gem-flash .section-head h2{font-size:19px}
+.gem-flash-title{margin:0 0 6px;font-size:16px;font-weight:700;color:#322e3c}
+.gem-flash .digest-text{font-size:14px;line-height:1.85}
+.gem-flash small{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0 12px;font-size:12px;color:#8d87a0}
+.gem-flash-actions{display:flex;flex-wrap:wrap;gap:10px}
+.gem-flash-actions .btn{min-height:34px;padding:6px 13px;font-size:14px}

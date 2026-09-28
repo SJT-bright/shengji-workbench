@@ -1,0 +1,12 @@
+# Soft Studio assets
+
+Generated with built-in Imagegen on 2026-09-26 for this project.
+
+- soft-icons.png: 1536x1024 RGBA sprite, three columns / two rows. Microphone, folder, clock, book, star, sparkle. Transparent surroundings, independently verified alpha range 0..254.
+- soft-audio.png: wide homepage hero, lavender microphone, mint clock and cream note tiles.
+
+## Icon prompt
+Use case: stylized-concept. Asset type: production UI icon sprite sheet with exactly SIX separate icons on a transparent background, arranged in a precise 3 columns by 2 rows equally sized grid. Landscape aspect 3:2. Each square cell contains one centered rounded square 3D tile, about 70 percent of cell width, with generous padding and its own diffuse ambient shadow. Uniform front-facing view, no isometric rotation. Soft 3D claymorphism / subtle skeuomorphism. Matte satin resin, rounded pillowy bevels, broad soft upper-left light, diffuse lilac-gray shadow. Clear sharp white lightly embossed symbols. No glass, no transparency inside tiles, no metal, no mirror, no neon, no words. TOP ROW LEFT TO RIGHT: lavender-purple tile with microphone symbol; creamy orange tile with folder symbol; mint green tile with clock symbol. BOTTOM ROW LEFT TO RIGHT: dusty teal-blue tile with open book symbol; muted mauve tile with star symbol; soft periwinkle tile with four-point sparkle symbol. Match charming premium macOS utility icons: soft plush thickness, low saturation but distinct color, subtle vertical gradients, highlights soft and wide, foreground edges legible. Equal icon size and equal spacing. The background outside all six icons and their soft shadows MUST be genuinely transparent.
+
+## Hero prompt
+Use case: stylized-concept. Asset type: wide 16:9 hero illustration for a personal audio diary desktop app. Soft 3D claymorphism, charming matte satin resin objects, creamy white and pale lavender scene. On RIGHT third: a lavender purple rounded square tile with a crisp small white embossed microphone symbol, a smaller mint clock tile and creamy orange note tile resting on a softly rounded off-white podium. Soft upper-left studio lighting, broad delicate highlights, large diffuse lavender-gray shadows. No glass, no metal, no reflections, no chrome, no neon. LEFT two thirds is quiet blank pale lavender and warm white negative space for dark live UI text. Gentle background gradients, plush bevels, pastel colors yet clear silhouettes. No words, no letters, no watermark, no UI mockup.

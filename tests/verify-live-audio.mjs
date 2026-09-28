@@ -1,0 +1,15 @@
+// Explicit live integration check with synthetic material, never a user's library.
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawn} from 'node:child_process';import assert from 'node:assert/strict';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'shengji-live-'));const inbox=path.join(dir,'inbox'),db=path.join(dir,'data');const port=5195;const token='live-integration-token';
+const child=spawn(process.execPath,['server.mjs'],{cwd:process.cwd(),env:{...process.env,SHENGJI_PORT:String(port),SHENGJI_TOKEN:token,SHENGJI_DATA_DIR:db,SHENGJI_INBOX:inbox},stdio:'ignore'});
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const api=async(p,method='GET',body)=>{const r=await fetch(`http://127.0.0.1:${port}/api/${p}`,{method,headers:{'X-Shengji-Token':token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw new Error(data.error);return data};
+try{for(let i=0;i<40;i++){try{await api('health');break}catch{await pause(200)}}
+ const bytes=fs.readFileSync('verification/fixtures/asr-synthetic.mp3');
+ const result=await api('import-audio','POST',{audio:{name:'合成验收录音.mp3',data:bytes.toString('base64')},autoAnalyze:true});
+ let state;for(let i=0;i<240;i++){state=await api('state');const r=state.records.find(x=>x.id===result.record.id);if(r?.transcription.status==='failed')throw new Error(r.transcription.error);if(r&&['done','failed'].includes(r.ai?.status))break;await pause(1000)}
+ const record=state.records.find(x=>x.id===result.record.id);assert.equal(record.transcription.status,'done',record.transcription.error);assert.equal(record.ai.status,'done',record.ai.error);assert.ok(['meeting','project','work'].includes(record.category));assert.ok(record.transcript.includes('录音整理工作台'));assert.ok(record.transcript.includes('明天下午三点'));assert.ok(record.summary.length>5);assert.ok(record.highlights.every(q=>record.transcript.includes(q)));
+ assert.equal((await api('import-audio','POST',{audio:{name:'重复.mp3',data:bytes.toString('base64')},autoAnalyze:true})).duplicate,true);
+ const response=await fetch(`http://127.0.0.1:${port}/api/audio/${record.id}`,{headers:{'X-Shengji-Token':token}});assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),bytes);
+ fs.mkdirSync('verification',{recursive:true});const report={verifiedAt:new Date().toISOString(),scope:'isolated synthetic MP3; no user recordings',transcription:record.transcription,transcript:record.transcript,flow:['MP3 upload','real offline FunASR','real local Qwen','category/title/summary','audio replay bytes','duplicate prevented'],model:record.ai.model,category:record.category,title:record.title,summary:record.summary,highlights:record.highlights,actions:record.actions,sourceHash:record.source.hash,status:'PASS'};fs.writeFileSync('verification/live-audio.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
+}finally{child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));fs.rmSync(dir,{recursive:true,force:true})}
