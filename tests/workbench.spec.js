@@ -103,6 +103,13 @@ test('quick find palette opens, searches, navigates and runs actions',async({pag
  // 顶栏入口打开面板：#palette[open] 且输入框自动聚焦
  await page.getByRole('button',{name:'快速查找',exact:true}).click();
  await expect(page.locator('#palette')).toHaveAttribute('open');await expect(page.locator('#palette-input')).toBeFocused();
+ await page.keyboard.press('ArrowDown');
+ await expect(page.locator('[data-palette-page="all"]')).toHaveAttribute('aria-selected','true');
+ await page.keyboard.press('ArrowUp');
+ await expect(page.locator('[data-palette-page="home"]')).toHaveAttribute('aria-selected','true');
+ await page.locator('#palette-input').fill('演示文字');
+ await page.keyboard.press('Home');
+ expect(await page.locator('#palette-input').evaluate(el=>el.selectionStart)).toBe(0);
  await page.screenshot({path:'verification/palette-open.png'});
  // 输入关键词：记录段出现 fixture 行，点击打开详情弹窗
  await page.locator('#palette-input').fill('演示');
@@ -111,7 +118,7 @@ test('quick find palette opens, searches, navigates and runs actions',async({pag
  await page.locator('.modal-head').getByRole('button',{name:'关闭',exact:true}).click();await expect(page.locator('#modal')).not.toBeVisible();
  // 「前往」段：切到全部记录，面板自动收起
  await page.getByRole('button',{name:'快速查找',exact:true}).click();await expect(page.locator('#palette')).toHaveAttribute('open');
- await page.locator('[data-palette-page="all"]').click();
+ await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
  await expect(page.locator('.breadcrumbs')).toContainText('全部记录');await expect(page.locator('#palette')).not.toBeVisible();
  // 「操作」段第一项：打开导入弹窗
  await page.getByRole('button',{name:'快速查找',exact:true}).click();

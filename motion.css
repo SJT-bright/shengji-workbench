@@ -1,0 +1,84 @@
+/* 动效层：最受喜爱的界面动画一次配齐 —— 弹簧入场、收藏弹跳、处理中呼吸、进度流光、
+   空态漂浮、时间线粘性日期、键位徽章与克制的滚动条。全部动画服从系统「减弱动态效果」
+   设置（styles.css 的全局 reduced-motion 规则优先级最高）。 */
+:root{--spring:cubic-bezier(.34,1.56,.64,1)}
+::selection{background:#e2d7f8;color:#2a2833}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c9bfe2;border-radius:8px;border:2.5px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:#ac9dcd;background-clip:content-box;border:2.5px solid transparent}
+
+/* 键位提示徽章：搜索框右侧 ⌘K 与命令面板底部提示共用 */
+kbd{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:6px;border:1px solid #d8d0ea;background:linear-gradient(180deg,#fff,#f3effa);box-shadow:0 1.5px 0 #d8d0ea;font:600 11px/1 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:#5f5a6e}
+
+/* 对话框：轻弹簧入场；与光学 blur reveal 同时存在时两条动画叠加（后者补充位移缩放） */
+.modal[open]{animation:modalIn .42s var(--spring) both}
+.modal.optical-reveal[open]{animation:opticalReveal .52s var(--ease-out) both,modalIn .42s var(--spring) both}
+@keyframes modalIn{from{opacity:0;transform:translateY(16px) scale(.96)}60%{opacity:1}to{opacity:1;transform:none}}
+/* 长表单弹窗：头尾粘性固定（iOS sheet 式），保存/关闭始终可见，仅内容滚动 */
+.modal-head{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#fcfafffa 70%,#fcfaffd4);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.modal-footer{position:sticky;bottom:0;z-index:10;background:linear-gradient(0deg,#f2eff9,#f2eff9e2);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.palette[open]{animation:paletteIn .34s var(--spring) both;transform-origin:top center}
+@keyframes paletteIn{from{opacity:0;transform:translateY(-12px) scale(.97)}to{opacity:1;transform:none}}
+
+/* Toast：上滑回弹出现；隐藏仍走原有 transition 淡出 */
+.toast.show{animation:toastIn .42s var(--spring)}
+@keyframes toastIn{from{opacity:0;transform:translate(-50%,18px) scale(.94)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+
+/* 收藏星标：点亮瞬间弹跳（点击后由 JS 追加 .bounce，动画结束自动移除，避免轮询重放） */
+.icon-btn.bounce svg{animation:starPop .5s var(--spring)}
+@keyframes starPop{0%{transform:scale(.55) rotate(-14deg)}55%{transform:scale(1.28) rotate(7deg)}100%{transform:scale(1) rotate(0)}}
+
+/* 处理中：徽标图标呼吸、自动化球体光晕、AI 面板柔光环 */
+.ai-badge.running>svg,.transcription-badge.running>svg{animation:breathe 1.15s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.4;transform:scale(.88)}50%{opacity:1;transform:scale(1.1)}}
+.automation-strip.processing .automation-orb{animation:orbGlow 2.1s ease-in-out infinite}
+@keyframes orbGlow{0%,100%{box-shadow:var(--tile-hi),0 5px 12px rgba(72,58,110,.19)}50%{box-shadow:var(--tile-hi),0 6px 24px rgba(132,101,174,.5)}}
+.ai-result.running,.ai-result.queued{animation:aiPulse 2.2s ease-in-out infinite}
+@keyframes aiPulse{0%,100%{box-shadow:0 0 0 0 rgba(132,101,174,0)}50%{box-shadow:0 0 0 5px rgba(132,101,174,.12)}}
+
+/* 复盘进度条：缓慢流光 */
+.progress-fill{position:relative;overflow:hidden}
+.progress-fill:after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 25%,rgba(255,255,255,.5) 50%,transparent 75%);animation:sheen 2.6s ease-in-out infinite}
+@keyframes sheen{from{transform:translateX(-101%)}to{transform:translateX(101%)}}
+
+/* 空状态：图标轻轻漂浮 */
+.empty-state>svg{animation:floaty 3.4s ease-in-out infinite}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+
+/* 卡片悬浮：知识卡升起；记录图标磁贴微放大 */
+.knowledge-card:hover{transform:translateY(-2px);box-shadow:0 14px 25px rgba(72,58,110,.16)}
+.record-icon{transition:transform .25s var(--ease-out)}
+.record-card:hover .record-icon{transform:scale(1.07) rotate(-2deg)}
+
+/* 时间线日期头：滚动时吸附在顶端（iOS 式），玻璃质感 */
+.timeline-group h2{position:sticky;top:10px;z-index:5;padding:10px 16px;border:1px solid #fffffff0;border-radius:12px;background:linear-gradient(140deg,#fffffff7,#f4f1fbf2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:var(--shadow)}
+
+/* 搜索框 ⌘K 提示：聚焦或输入时淡出，不与清除按钮争夺空间 */
+.search-box .search-kbd{position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;transition:opacity .18s ease}
+.search-box:focus-within .search-kbd,.search-box input:not(:placeholder-shown)~.search-kbd{opacity:0}
+
+/* 命令面板：键盘行高亮与底部键位提示条 */
+.palette-row.active{background:#eae3f8}
+.palette-row.active small{color:#57506c}
+.palette-foot{display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid #e6e1f0;font-size:12px;color:#8d87a0;background:#f7f4fcb3}
+.palette-foot span{display:inline-flex;align-items:center;gap:4px}
+.palette-foot-spacer{flex:1}
+
+/* 侧栏分类列表：底部渐隐提示可继续滚动，避免项目被滚动折叠线硬切 */
+@media(min-width:761px){.category-nav{mask-image:linear-gradient(180deg,#000 84%,transparent 100%);-webkit-mask-image:linear-gradient(180deg,#000 84%,transparent 100%)}}
+
+/* 回到顶部：滚动超过一屏后浮现 */
+#scroll-top{position:fixed;right:22px;bottom:24px;z-index:60;opacity:0;pointer-events:none;transform:translateY(12px);transition:opacity .25s var(--ease-out),transform .25s var(--ease-out),box-shadow .2s var(--ease-out)}
+#scroll-top.show{opacity:1;pointer-events:auto;transform:none}
+
+/* 侧栏新磁贴配色：处理队列 / 问录音 / 设备连接 / 应用关联 各有自己的暖色 */
+.sidebar nav .nav-item[data-page=queue]>svg{background:linear-gradient(155deg,#ffe1cf 0%,#f2a878 58%,#e8945f 100%)}
+.sidebar nav .nav-item[data-page=ask]>svg{background:linear-gradient(155deg,#e8defc 0%,#b7a4ec 58%,#a28ce2 100%)}
+.sidebar nav .nav-item[data-page=devices]>svg{background:linear-gradient(155deg,#d9f1f8 0%,#86c6da 58%,#6eb6ce 100%)}
+.sidebar nav .nav-item[data-page=connections]>svg{background:linear-gradient(155deg,#dcefd9 0%,#93c795 58%,#7db884 100%)}
+
+@media(max-width:760px){
+ .breadcrumbs{display:block;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+ .top-actions{flex-shrink:0}
+}

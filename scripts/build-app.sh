@@ -41,8 +41,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>声迹</string>
 <key>CFBundleDisplayName</key><string>声迹</string>
 <key>CFBundleIdentifier</key><string>local.shengji.desktop</string>
-<key>CFBundleVersion</key><string>5</string>
-<key>CFBundleShortVersionString</key><string>0.5.0</string>
+<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>0.5.1</string>
 <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>local.shengji.record</string><key>CFBundleURLSchemes</key><array><string>shengji</string></array></dict></array>
 <key>CFBundleDocumentTypes</key><array><dict><key>CFBundleTypeName</key><string>录音与转写稿</string><key>CFBundleTypeRole</key><string>Viewer</string><key>LSHandlerRank</key><string>Alternate</string><key>CFBundleTypeExtensions</key><array><string>mp3</string><string>m4a</string><string>wav</string><string>txt</string><string>md</string><string>srt</string><string>vtt</string></array></dict></array>
 <key>CFBundleExecutable</key><string>Shengji</string>

@@ -102,7 +102,7 @@ export function validateCategories(list){
  const ids=new Set(),names=new Set();for(const c of list){
  if(!c||typeof c.id!=='string'||!/^[a-z][a-z0-9-]{0,60}$/.test(c.id)||['home','all','timeline','review','favorites','queue','connections','ask'].includes(c.id)||ids.has(c.id))throw new Error('分类标识无效或重复');
  if(typeof c.name!=='string'||!c.name.trim()||c.name!==c.name.trim()||c.name.length>30||names.has(c.name.toLocaleLowerCase()))throw new Error('分类名称须为 1–30 字且不能重复');
- if(typeof c.color!=='string'||!/^#[a-f0-9]{6}$/i.test(c.color)||!['work','learn','life','idea','folder','book','mic','clock','star'].includes(c.icon))throw new Error('分类样式无效');
+ if(typeof c.color!=='string'||!/^#[a-f0-9]{6}$/i.test(c.color)||!['work','learn','life','idea','folder','book','mic','clock','star','heart','coffee','users','target','message','pen','music','calendar','bookmark','plane'].includes(c.icon))throw new Error('分类样式无效');
  ids.add(c.id);names.add(c.name.toLocaleLowerCase());}
  if(!ids.has('inbox'))throw new Error('必须保留待确认分类');return list;
 }
