@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import http from 'node:http';
 import crypto from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -12,11 +13,11 @@ import {localDate} from '../shared.mjs';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function freePort(){const socket=net.createServer();await new Promise(resolve=>socket.listen(0,'127.0.0.1',resolve));const port=socket.address().port;await new Promise(resolve=>socket.close(resolve));return port;}
-async function fixture(t){
+async function fixture(t,{aiEndpoint='http://127.0.0.1:1/api/chat'}={}){
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'shengji-isolated-test-')),data=path.join(dir,'data'),inbox=path.join(dir,'inbox');await fs.mkdir(data);await fs.mkdir(inbox);
  const token='isolated-test-token';const port=await freePort();
  await fs.writeFile(path.join(data,'library.json'),JSON.stringify({version:2,records:[],revision:0,seenHashes:[],settings:{watchFolder:inbox,watchEnabled:true,autoAnalyze:false,model:'qwen2.5:7b'}}));
- const child=spawn(process.execPath,['server.mjs'],{cwd:root,env:{...process.env,SHENGJI_PORT:String(port),SHENGJI_TOKEN:token,SHENGJI_DATA_DIR:data,SHENGJI_INBOX:inbox,SHENGJI_AI_ENDPOINT:'http://127.0.0.1:1/api/chat'},stdio:['ignore','pipe','pipe']});let logs='';child.stdout.on('data',c=>logs+=c);child.stderr.on('data',c=>logs+=c);
+ const child=spawn(process.execPath,['server.mjs'],{cwd:root,env:{...process.env,SHENGJI_PORT:String(port),SHENGJI_TOKEN:token,SHENGJI_DATA_DIR:data,SHENGJI_INBOX:inbox,SHENGJI_AI_ENDPOINT:aiEndpoint},stdio:['ignore','pipe','pipe']});let logs='';child.stdout.on('data',c=>logs+=c);child.stderr.on('data',c=>logs+=c);
  t.after(async()=>{child.kill('SIGTERM');await Promise.race([new Promise(resolve=>child.once('exit',resolve)),sleep(2000)]);if(child.exitCode===null)child.kill('SIGKILL');await fs.rm(dir,{recursive:true,force:true});});
  const base=`http://127.0.0.1:${port}`;
  const api=async(route,{method='GET',body,headers={}}={})=>{const response=await fetch(base+route,{method,headers:{'x-shengji-token':token,'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,body:await response.json()};};
@@ -105,6 +106,131 @@ test('audio import, raw preservation, paired transcript and portable attachments
  const backup=(await first.api('/api/backup')).body;assert.equal(backup.audioFiles[record.audio.hash],bytes.toString('base64'));assert.equal((await second.api('/api/restore',{method:'POST',body:backup})).status,200);
  assert.deepEqual(await fs.readFile(path.join(second.data,'audio',record.audio.hash)),bytes);assert.equal(await fs.readFile(path.join(second.data,'originals',record.source.hash+'.txt'),'utf8'),raw);
  const broken=structuredClone(backup);broken.audioFiles[record.audio.hash]=Buffer.from('not audio').toString('base64');assert.equal((await second.api('/api/restore',{method:'POST',body:broken})).status,400);assert.equal((await second.api('/api/state')).body.records[0].transcript,record.transcript);
+});
+
+async function seedBackupHistory(api){
+ const created=await api('/api/import',{method:'POST',body:{text:'用于备份往返的课程复盘原文。',date:'2026-03-05',autoAnalyze:false}});
+ assert.equal(created.status,200);
+ const record=created.body.record;
+ assert.equal((await api('/api/records',{method:'PUT',body:{...record,actions:['整理课程笔记'],value:'gem',valueSource:'user'}})).status,200);
+ assert.equal((await api('/api/action',{method:'POST',body:{recordId:record.id,text:'整理课程笔记',done:true}})).status,200);
+ for(const [route,body] of [['digest',{date:'2026-03-05'}],['weekly',{date:'2026-03-05'}],['monthly',{month:'2026-03'}],['yearly',{year:'2026'}]]){
+  assert.equal((await api('/api/'+route,{method:'POST',body})).status,200);
+ }
+ return (await api('/api/state')).body;
+}
+
+test('portable backup round-trips all generated reviews and completed actions while keeping local settings',async t=>{
+ const first=await fixture(t),second=await fixture(t);
+ const before=await seedBackupHistory(first.api);
+ const backup=(await first.api('/api/backup')).body;
+ const settings=(await second.api('/api/state')).body.settings;
+ for(const key of ['digests','weeklies','monthlies','yearlies','doneActions'])assert.deepEqual(backup[key],before[key],key);
+ assert.equal((await second.api('/api/restore',{method:'POST',body:backup})).status,200);
+ const restored=(await second.api('/api/state')).body;
+ const exported=(await second.api('/api/backup')).body;
+ for(const key of ['digests','weeklies','monthlies','yearlies','doneActions']){
+  assert.deepEqual(restored[key],before[key],key);
+  assert.deepEqual(exported[key],before[key],key);
+ }
+ assert.deepEqual(restored.settings,settings);
+});
+
+test('legacy backups without review history clear current history and completed actions',async t=>{
+ const {api}=await fixture(t);
+ await seedBackupHistory(api);
+ const full=(await api('/api/backup')).body;
+ const settings=(await api('/api/state')).body.settings;
+ for(const version of [1,2]){
+  assert.equal((await api('/api/restore',{method:'POST',body:full})).status,200);
+  const legacy={version,records:full.records,categories:full.categories,originals:full.originals,audioFiles:full.audioFiles};
+  assert.equal((await api('/api/restore',{method:'POST',body:legacy})).status,200);
+  const state=(await api('/api/state')).body;
+  for(const key of ['digests','weeklies','monthlies','yearlies'])assert.deepEqual(state[key],{},key);
+  assert.deepEqual(state.doneActions,[]);
+  assert.deepEqual(state.settings,settings);
+ }
+});
+
+test('invalid backup history is rejected before replacing records or writing original attachments',async t=>{
+ const {api,data}=await fixture(t);
+ const before=await seedBackupHistory(api);
+ const backup=(await api('/api/backup')).body;
+ const originalFiles=await fs.readdir(path.join(data,'originals'));
+ const sqliteBefore=await fs.readFile(before.database.path);
+ const invalidChanges=[
+  input=>{input.digests=null},
+  input=>{input.weeklies=[]},
+  input=>{input.digests['2026-03-05'].date='2026-02-30'},
+  input=>{input.weeklies['2026-03-02'].end='2026-03-09'},
+  input=>{input.monthlies['2026-03'].month='2026-04'},
+  input=>{input.yearlies['2026'].text=17},
+  input=>{input.yearlies['2026'].recordCount=-1},
+  input=>{input.digests['2026-03-05'].generatedAt='not-a-date'},
+  input=>{input.doneActions={}},
+  input=>{input.doneActions[0].text=17},
+  input=>{input.doneActions[0].at='2026-02-30'},
+ ];
+ for(const change of invalidChanges){
+  const input=structuredClone(backup);
+  input.records.push({...backup.records[0],id:'staged-new-record',transcript:'不能在无效备份校验前落盘的新原文。',source:{name:'new.txt'}});
+  change(input);
+  assert.equal((await api('/api/restore',{method:'POST',body:input})).status,400);
+  const after=(await api('/api/state')).body;
+  for(const key of ['records','digests','weeklies','monthlies','yearlies','doneActions'])assert.deepEqual(after[key],before[key],key);
+  assert.deepEqual(await fs.readdir(path.join(data,'originals')),originalFiles);
+  assert.deepEqual(await fs.readFile(before.database.path),sqliteBefore);
+ }
+});
+
+test('backup history keeps only completed actions belonging to backed-up records and removes duplicates',async t=>{
+ const {api}=await fixture(t);
+ const before=await seedBackupHistory(api);
+ const completed=before.doneActions[0];
+ await api('/api/action',{method:'POST',body:{recordId:'removed-record',text:'旧记录的待办',done:true}});
+ await api('/api/action',{method:'POST',body:{recordId:completed.recordId,text:'已被改写的待办',done:true}});
+ const backup=(await api('/api/backup')).body;
+ assert.deepEqual(backup.doneActions,[completed]);
+ backup.doneActions.push({...completed},{recordId:'removed-record',text:'旧记录的待办',at:completed.at},{...completed,text:'已被改写的待办'});
+ assert.equal((await api('/api/restore',{method:'POST',body:backup})).status,200);
+ assert.deepEqual((await api('/api/state')).body.doneActions,[completed]);
+});
+
+test('pending period reviews cannot write old-library content after restore, but survive rejected restores',async t=>{
+ const scenarios=[
+  ['digest',{date:'2026-03-05'},true],
+  ['weekly',{date:'2026-03-05'},true],
+  ['monthly',{month:'2026-03'},true],
+  ['yearly',{year:'2026'},true],
+  ['digest',{date:'2026-03-05'},false],
+ ];
+ for(const [route,body,validRestore] of scenarios)await t.test(`${route}: ${validRestore?'restore succeeds':'restore is rejected'}`,async sub=>{
+  let arrived;
+  const received=new Promise(resolve=>{arrived=resolve});
+  const model=http.createServer((req,res)=>{req.resume();req.on('end',()=>arrived(res))});
+  await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
+  sub.after(()=>new Promise(resolve=>{model.close(resolve);model.closeAllConnections()}));
+  const {api}=await fixture(sub,{aiEndpoint:`http://127.0.0.1:${model.address().port}/api/chat`});
+  assert.equal((await api('/api/import',{method:'POST',body:{text:'恢复之前旧库的原文。',date:'2026-03-05',autoAnalyze:false}})).status,200);
+  const pending=api('/api/'+route,{method:'POST',body});
+  let timeout;
+  const response=await Promise.race([received,new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('mock model did not receive request')),3000)})]).finally(()=>clearTimeout(timeout));
+  const restore={version:2,records:[]};if(!validRestore)restore.digests=null;
+  assert.equal((await api('/api/restore',{method:'POST',body:restore})).status,validRestore?200:400);
+  response.writeHead(200,{'Content-Type':'application/json'});
+  response.end(JSON.stringify({message:{content:JSON.stringify({text:'旧库原文生成的回顾。'})}}));
+  const result=await pending;
+  const state=(await api('/api/state')).body;
+  if(validRestore){
+   assert.equal(result.status,409);assert.match(result.body.error,/恢复|资料库/);
+   assert.deepEqual(state.records,[]);
+   for(const key of ['digests','weeklies','monthlies','yearlies'])assert.deepEqual(state[key],{},key);
+  }else{
+   assert.equal(result.status,200);
+   assert.equal(state.records.length,1);
+   assert.equal(state.digests['2026-03-05'].text,'旧库原文生成的回顾。');
+  }
+ });
 });
 
 test('digest falls back to deterministic text without a model, is stored in state and overwrites per day',async t=>{

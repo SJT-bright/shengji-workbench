@@ -4,12 +4,12 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {categories,parseTranscript,localDate,validateRecord,validateBackup,validateCategories,validateAudio} from './shared.mjs';
+import {categories,parseTranscript,localDate,validateRecord,validateBackup,backupHistory,validateBackupHistory,validateCategories,validateAudio} from './shared.mjs';
 import {analyzeTranscript,applyAiValue,summarizeDay,summarizeWeek,summarizeMonth,summarizeYear} from './ai.mjs';
 import {transcribeAudio,getTranscriptionStatus} from './transcribe.mjs';
 import {openStore} from './store.mjs';
 import {cleanTranscript} from './cleanup.mjs';
-import {answerFromRecords} from './record-qa.mjs';
+import {answerFromRecords,findRelevantRecords} from './record-qa.mjs';
 import {handleConnectorApi} from './connector-routes.mjs';
 import {createConnectorService} from './connectors/index.mjs';
 const base=path.dirname(fileURLToPath(import.meta.url));
@@ -23,6 +23,7 @@ const defaults={watchFolder:defaultInbox,watchEnabled:true,autoAnalyze:true,mode
 const initialState={version:2,categories:structuredClone(categories),categoryRevision:0,records:[],settings:defaults,seenHashes:[],digests:{},weeklies:{},monthlies:{},yearlies:{},doneActions:[],revision:0};
 const store=openStore({dataDir,initialState,validate:validateBackup});
 let db=store.load();db.settings={...defaults,...db.settings};db.seenHashes=Array.isArray(db.seenHashes)?db.seenHashes:[];db.revision||=0;
+let libraryGeneration=0;
 db.digests=db.digests&&typeof db.digests==='object'&&!Array.isArray(db.digests)?db.digests:{};
 db.weeklies=db.weeklies&&typeof db.weeklies==='object'&&!Array.isArray(db.weeklies)?db.weeklies:{};db.monthlies=db.monthlies&&typeof db.monthlies==='object'&&!Array.isArray(db.monthlies)?db.monthlies:{};db.yearlies=db.yearlies&&typeof db.yearlies==='object'&&!Array.isArray(db.yearlies)?db.yearlies:{};db.doneActions=Array.isArray(db.doneActions)?db.doneActions:[];
 db.categories=validateCategories(db.categories?.length?db.categories:structuredClone(categories));db.categoryRevision||=0;validateBackup(db);
@@ -227,8 +228,7 @@ const server=http.createServer(async(req,res)=>{try{
  if(p==='/api/search'&&req.method==='GET'){const q=(url.searchParams.get('q')||'').trim();if(q.length>500)throw new Error('搜索内容最多 500 字');return json(res,200,{records:store.search(q,50)});}
  if(p==='/api/ask'&&req.method==='POST'){
   const {question}=await readBody(req);if(typeof question!=='string'||!question.trim()||question.length>500)throw new Error('请填写 1–500 字的问题');
-  let candidates=store.search(question.trim(),10);
-  if(!candidates.length){const terms=[...new Set(question.match(/[\p{Script=Han}]{2,}|[a-zA-Z0-9]{2,}/gu)||[])];const parts=terms.flatMap(t=>t.length>4?[t,...Array.from({length:t.length-1},(_,i)=>t.slice(i,i+2))]:[t]);const hits=new Map();for(const term of parts.slice(0,40))for(const r of store.search(term,10)){const found=hits.get(r.id);hits.set(r.id,{record:r,score:(found?.score||0)+1});}candidates=[...hits.values()].sort((a,b)=>b.score-a.score).slice(0,8).map(x=>x.record);}
+  const candidates=findRelevantRecords(question,(term,limit)=>store.search(term,limit));
   const controller=new AbortController();res.on('close',()=>controller.abort());
   return json(res,200,await answerFromRecords(question,candidates,{model:db.settings.model,signal:controller.signal}));
  }
@@ -264,7 +264,8 @@ const server=http.createServer(async(req,res)=>{try{
  if(typeof day!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(day)||Number.isNaN(+new Date(`${day}T12:00:00`))||localDate(new Date(`${day}T12:00:00`))!==day)throw new Error('日期格式无效，应为 YYYY-MM-DD');
  const dayRecords=db.records.filter(r=>r.date===day);
  if(!dayRecords.length)throw new Error('这一天没有记录');
- const digest=await buildDigest(day,dayRecords);
+ const generation=libraryGeneration,digest=await buildDigest(day,dayRecords);
+ if(generation!==libraryGeneration)return json(res,409,{error:'资料库已恢复，本次回顾未写入。请重新提炼。'});
  mutate(n=>{n.digests={...(n.digests||{}),[day]:digest}});
  return json(res,200,digest);
  }
@@ -276,7 +277,8 @@ const server=http.createServer(async(req,res)=>{try{
  const start=localDate(anchor),end=localDate(lastDay);
  const weekRecords=db.records.filter(r=>r.date>=start&&r.date<=end);
  if(!weekRecords.length)return json(res,400,{error:'这一周没有记录'});
- const weekly=await buildWeekly(start,end,weekRecords);
+ const generation=libraryGeneration,weekly=await buildWeekly(start,end,weekRecords);
+ if(generation!==libraryGeneration)return json(res,409,{error:'资料库已恢复，本次回顾未写入。请重新提炼。'});
  mutate(n=>{n.weeklies={...(n.weeklies||{}),[start]:weekly}});
  return json(res,200,weekly);
  }
@@ -287,7 +289,8 @@ const server=http.createServer(async(req,res)=>{try{
  const start=localDate(new Date(year,m-1,1,12)),end=localDate(new Date(year,m,0,12));
  const monthRecords=db.records.filter(r=>r.date>=start&&r.date<=end);
  if(!monthRecords.length)return json(res,400,{error:'这个月没有记录'});
- const monthly=await buildMonthly(month,start,end,monthRecords);
+ const generation=libraryGeneration,monthly=await buildMonthly(month,start,end,monthRecords);
+ if(generation!==libraryGeneration)return json(res,409,{error:'资料库已恢复，本次回顾未写入。请重新提炼。'});
  mutate(n=>{n.monthlies={...(n.monthlies||{}),[month]:monthly}});
  return json(res,200,monthly);
  }
@@ -297,7 +300,8 @@ const server=http.createServer(async(req,res)=>{try{
  const start=`${year}-01-01`,end=`${year}-12-31`;
  const yearRecords=db.records.filter(r=>r.date>=start&&r.date<=end);
  if(!yearRecords.length)return json(res,400,{error:'这一年没有记录'});
- const yearly=await buildYearly(year,start,end,yearRecords);
+ const generation=libraryGeneration,yearly=await buildYearly(year,start,end,yearRecords);
+ if(generation!==libraryGeneration)return json(res,409,{error:'资料库已恢复，本次回顾未写入。请重新提炼。'});
  mutate(n=>{n.yearlies={...(n.yearlies||{}),[year]:yearly}});
  return json(res,200,yearly);
  }
@@ -309,8 +313,44 @@ const server=http.createServer(async(req,res)=>{try{
  }
  if(p==='/api/settings'&&req.method==='PUT'){const input=await readBody(req);if(!['qwen2.5:7b','qwen3:14b'].includes(input.model)||typeof input.watchEnabled!=='boolean'||typeof input.autoAnalyze!=='boolean'||typeof input.watchFolder!=='string')throw new Error('设置格式无效');const folder=fs.realpathSync(input.watchFolder);if(!fs.statSync(folder).isDirectory())throw new Error('请选择一个文件夹');fs.accessSync(folder,fs.constants.R_OK);mutate(n=>{n.settings={...n.settings,model:input.model,watchEnabled:input.watchEnabled,autoAnalyze:input.autoAnalyze,watchFolder:folder}});stability.clear();watchError='';scan();return json(res,200,db.settings)}
  if(p==='/api/scan'&&req.method==='POST'){scan();return json(res,200,{ok:true,error:watchError,lastScan})}
- if(p==='/api/backup'&&req.method==='GET'){const originals={},audioFiles={};for(const r of db.records){if(r.audio)audioFiles[r.audio.hash]=fs.readFileSync(path.join(audioDir,r.audio.hash)).toString('base64');const hash=cleanHash(r.transcript);const f=path.join(originalsDir,hash+'.txt');originals[hash]=fs.existsSync(f)?fs.readFileSync(f,'utf8'):r.transcript}return json(res,200,{version:2,exportedAt:new Date().toISOString(),records:db.records,categories:db.categories,originals,audioFiles})}
- if((p==='/api/restore'||p==='/api/migrate')&&req.method==='POST'){const input=await readBody(req);const imported=validateBackup(input);if(p==='/api/migrate'&&db.records.length)return json(res,409,{error:'应用中已有记录，请使用备份恢复入口迁移'});const staged=[],stagedAudio=[];for(const r of imported){if(r.audio){const bytes=decodeAudio(input.audioFiles?.[r.audio.hash],r.audio.name);if(cleanHash(bytes)!==r.audio.hash||bytes.length!==r.audio.size||audioMime(bytes,r.audio.name)!==r.audio.mime)throw new Error('音频附件校验失败');stagedAudio.push({bytes,hash:r.audio.hash})}const hash=cleanHash(r.transcript);const raw=input.originals?.[hash]??r.transcript;if(typeof raw!=='string'||raw.length>600000||parseTranscript(raw,r.source?.transcriptName||r.source?.name||'')!==r.transcript)throw new Error('备份中的原始文件与转写内容不一致');staged.push({raw,hash});r.source={...r.source,hash:r.transcript?hash:(r.audio?.hash||hash),name:r.source?.name||'备份恢复',kind:'restore'};r.revision=(r.revision||0)+1;if(['running','queued'].includes(r.ai?.status))r.ai={...r.ai,status:'failed',error:'恢复后的记录尚未重新整理，可手动重试'}}for(const r of imported){if(['queued','running'].includes(r.transcription?.status))r.transcription={...r.transcription,status:'failed',error:'备份已恢复，可点击重新转写继续'}}for(const {raw,hash} of staged)preserveOriginal(raw,hash);for(const {bytes,hash} of stagedAudio)preserveAudio(bytes,hash);activeAbort?.abort();mutate(n=>{n.records=imported;n.categories=structuredClone(input.categories??categories);n.categoryRevision++;n.seenHashes=[...new Set([...n.seenHashes,...imported.flatMap(r=>[r.source.hash,...(r.audio?[r.audio.hash]:[])])])]});return json(res,200,{ok:true,count:imported.length})}
+ if(p==='/api/backup'&&req.method==='GET'){
+  const history=backupHistory(db),originals={},audioFiles={};
+  for(const r of db.records){
+   if(r.audio)audioFiles[r.audio.hash]=fs.readFileSync(path.join(audioDir,r.audio.hash)).toString('base64');
+   const hash=cleanHash(r.transcript),file=path.join(originalsDir,hash+'.txt');
+   originals[hash]=fs.existsSync(file)?fs.readFileSync(file,'utf8'):r.transcript;
+  }
+  return json(res,200,{version:2,exportedAt:new Date().toISOString(),records:db.records,categories:db.categories,...history,originals,audioFiles});
+ }
+ if((p==='/api/restore'||p==='/api/migrate')&&req.method==='POST'){
+  const input=await readBody(req),imported=validateBackup(input),history=validateBackupHistory(input,imported);
+  if(p==='/api/migrate'&&db.records.length)return json(res,409,{error:'应用中已有记录，请使用备份恢复入口迁移'});
+  const staged=[],stagedAudio=[];
+  for(const r of imported){
+   if(r.audio){
+    const bytes=decodeAudio(input.audioFiles?.[r.audio.hash],r.audio.name);
+    if(cleanHash(bytes)!==r.audio.hash||bytes.length!==r.audio.size||audioMime(bytes,r.audio.name)!==r.audio.mime)throw new Error('音频附件校验失败');
+    stagedAudio.push({bytes,hash:r.audio.hash});
+   }
+   const hash=cleanHash(r.transcript),raw=input.originals?.[hash]??r.transcript;
+   if(typeof raw!=='string'||raw.length>600000||parseTranscript(raw,r.source?.transcriptName||r.source?.name||'')!==r.transcript)throw new Error('备份中的原始文件与转写内容不一致');
+   staged.push({raw,hash});
+   r.source={...r.source,hash:r.transcript?hash:(r.audio?.hash||hash),name:r.source?.name||'备份恢复',kind:'restore'};
+   r.revision=(r.revision||0)+1;
+   if(['running','queued'].includes(r.ai?.status))r.ai={...r.ai,status:'failed',error:'恢复后的记录尚未重新整理，可手动重试'};
+   if(['queued','running'].includes(r.transcription?.status))r.transcription={...r.transcription,status:'failed',error:'备份已恢复，可点击重新转写继续'};
+  }
+  for(const {raw,hash} of staged)preserveOriginal(raw,hash);
+  for(const {bytes,hash} of stagedAudio)preserveAudio(bytes,hash);
+  activeAbort?.abort();
+  mutate(n=>{
+   n.records=imported;n.categories=structuredClone(input.categories??categories);n.categoryRevision++;
+   Object.assign(n,history);
+   n.seenHashes=[...new Set([...n.seenHashes,...imported.flatMap(r=>[r.source.hash,...(r.audio?[r.audio.hash]:[])])])];
+  });
+  libraryGeneration++;
+  return json(res,200,{ok:true,count:imported.length});
+ }
  if(p==='/api/clear-demo'&&req.method==='POST'){mutate(n=>{n.records=n.records.filter(r=>!r.demo)});return json(res,200,{ok:true})}
  if(p.startsWith('/api/'))return json(res,404,{error:'接口不存在'});
  if(req.method!=='GET')return json(res,405,{error:'方法不支持'});

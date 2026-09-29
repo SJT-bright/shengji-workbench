@@ -257,8 +257,9 @@ test('weekly digest runs with busy state, falls back deterministically and persi
  const ws=new Date(todayStr+'T00:00:00');ws.setDate(ws.getDate()-(ws.getDay()+6)%7);
  const we=new Date(ws);we.setDate(we.getDate()+6);
  const fmt=d=>`${d.getMonth()+1}月${d.getDate()}日`,range=`${fmt(ws)}至${fmt(we)}`,wsStr=`${ws.getFullYear()}-${pad(ws.getMonth()+1)}-${pad(ws.getDate())}`;
+ expect((await request.post('/api/restore',{headers,data:{version:2,records:[{...fixture,date:todayStr}]}})).ok()).toBeTruthy();
  await page.goto('/');
- // 本周（含 2026-09-26）有记录 → 周报卡出现，按钮为「提炼本周」
+ // 夹具放在本周，避免测试日期变化后周报卡消失。
  const card=page.locator('.weekly-card');await expect(card).toBeVisible();
  await expect(card.locator('h2')).toContainText(`本周提炼 ${range}`);
  // 卡内主按钮用 .btn-secondary 圈定：提炼完成后卡内会出现「导出」text-btn，getByRole('button') 会二义
@@ -271,7 +272,7 @@ test('weekly digest runs with busy state, falls back deterministically and persi
  await expect(mainBtn).toBeDisabled();
  // 完成：降级文本首行 = 周一至周日 + 记录数；随后按钮变「重新提炼本周」
  await expect(card.locator('.digest-text')).toContainText(`${range} · 共 1 段记录`);
- await expect(card.locator('.digest-text')).toContainText('- 9月26日 · 1 条：演示的学习记录');
+ await expect(card.locator('.digest-text')).toContainText(`- ${fmt(now)} · 1 条：演示的学习记录`);
  await expect(page.locator('#toast')).toContainText('本周提炼已生成');
  await expect(mainBtn).toHaveText('重新提炼本周');
  const weekly=(await stateOf(request)).weeklies[wsStr];
@@ -565,11 +566,12 @@ test('yearly digest runs with busy state, falls back deterministically and expor
  expect(text).toContain(`${yearStr}年 · 共 1 段记录`);
  expect(errors).toEqual([]);
 });
-test('month heatmap colors by record count, filters by date and disables future days',async({page})=>{
+for(const day of [29,30])test(`month heatmap colors, filters and future-day boundary on September ${day}`,async({page})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- const pad=n=>String(n).padStart(2,'0'),now=new Date(),todayStr=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+ const pad=n=>String(n).padStart(2,'0'),now=new Date(2026,8,day,12),todayStr=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
  const tm=new Date(now);tm.setDate(tm.getDate()+1);
  const tomorrow=`${tm.getFullYear()}-${pad(tm.getMonth()+1)}-${pad(tm.getDate())}`;
+ await page.clock.setFixedTime(now);
  await page.goto('/');
  await page.locator('[data-page="timeline"]').click();
  // 每日足迹页面顶部出现「本月足迹」热力卡，统计行含本月段数
@@ -596,8 +598,9 @@ test('month heatmap colors by record count, filters by date and disables future 
  // 点清除 chip：恢复完整列表
  await chip.click();await expect(page.locator('[data-clear-date]')).toHaveCount(0);
  await expect(page.locator('.timeline-group')).toHaveCount(1);
- // 未来日期（明天）格子禁用
- await expect(card.locator(`[data-date="${tomorrow}"]`)).toBeDisabled();
+ // 同月的明天禁用；月末的明天属于下个月，不应出现在本月热力图。
+ const tomorrowCell=card.locator(`[data-date="${tomorrow}"]`);
+ if(tm.getMonth()===now.getMonth())await expect(tomorrowCell).toBeDisabled();else await expect(tomorrowCell).toHaveCount(0);
  expect(errors).toEqual([]);
 });
 test('gem flash card stays stable across re-renders, swaps on demand and reviews in place',async({page,request})=>{
@@ -638,4 +641,98 @@ test('gem flash card stays stable across re-renders, swaps on demand and reviews
  const reviewed=(await stateOf(request)).records.find(r=>r.title===after);
  expect(reviewed.reviewCount).toBe(1);expect(reviewed.lastReviewedAt).toBe(todayStr);expect(reviewed.reviewed).toBe(true);
  expect(errors).toEqual([]);
+});
+
+
+test('detail navigation asks before discarding a draft and cancellation keeps its fields',async({page,request})=>{
+ const older={...fixture,id:'draft-older',title:'下一段记录',date:'2026-09-25'};
+ expect((await request.post('/api/restore',{headers,data:{version:2,records:[fixture,older]}})).ok()).toBeTruthy();
+ await page.goto('/');await page.locator('.record-main').first().click();
+ await page.locator('#edit-title').fill('还没保存的标题');await page.locator('#edit-summary').fill('还没保存的摘要');
+ let canceled=0;const dismiss=async dialog=>{canceled++;await dialog.dismiss()};page.on('dialog',dismiss);
+ await page.getByRole('button',{name:'下一条记录',exact:true}).click();
+ await expect(page.locator('#edit-title')).toHaveValue('还没保存的标题');await expect(page.locator('#edit-summary')).toHaveValue('还没保存的摘要');expect(canceled).toBe(1);
+ page.off('dialog',dismiss);page.once('dialog',dialog=>dialog.accept());
+ await page.getByRole('button',{name:'下一条记录',exact:true}).click();await expect(page.locator('#modal h2')).toHaveText(older.title);
+ await page.getByRole('button',{name:'上一条记录',exact:true}).click();await expect(page.locator('#edit-title')).toHaveValue(fixture.title);
+ expect((await stateOf(request)).records.find(r=>r.id===fixture.id).summary).toBe(fixture.summary);
+});
+
+test('detail metadata updates preserve draft edits including typing during an in-flight tag save',async({page,request})=>{
+ const dialogs=[];page.on('dialog',async dialog=>{dialogs.push(dialog.message());await dialog.dismiss()});
+ await page.goto('/');await page.locator('.record-main').click();
+ await page.locator('#edit-title').fill('保留这个草稿标题');await page.locator('#edit-summary').fill('先写的摘要');
+ await page.locator('[data-set-value="gem"]').click();await expect(page.locator('[data-set-value="gem"]')).toHaveClass(/active/);
+ await expect(page.locator('#edit-title')).toHaveValue('保留这个草稿标题');await expect(page.locator('#edit-summary')).toHaveValue('先写的摘要');
+ const beforeTag=(await stateOf(request)).records.find(r=>r.id===fixture.id);expect(beforeTag.title).toBe(fixture.title);expect(beforeTag.summary).toBe(fixture.summary);
+ let release;const gate=new Promise(resolve=>{release=resolve});
+ await page.route('**/api/records',async route=>{if(route.request().method()==='PUT'){await gate}await route.continue()});
+ await page.locator('[data-gem-tag="方法论"]').click();await expect(page.getByRole('button',{name:'保存整理',exact:true})).toBeDisabled();
+ await page.locator('#edit-summary').fill('标签保存期间继续输入的摘要');await page.locator('#edit-summary').evaluate(el=>el.setSelectionRange(3,6));
+ release();await expect(page.locator('[data-gem-tag="方法论"]')).toHaveClass(/active/);
+ await expect(page.locator('#edit-title')).toHaveValue('保留这个草稿标题');await expect(page.locator('#edit-summary')).toHaveValue('标签保存期间继续输入的摘要');await expect(page.locator('#edit-summary')).toBeFocused();
+ expect(await page.locator('#edit-summary').evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([3,6]);expect(dialogs).toEqual([]);
+ await page.getByRole('button',{name:'保存整理',exact:true}).click();await expect(page.locator('#modal')).not.toBeVisible();
+ const saved=(await stateOf(request)).records.find(r=>r.id===fixture.id);expect(saved.title).toBe('保留这个草稿标题');expect(saved.summary).toBe('标签保存期间继续输入的摘要');expect(saved.gemTags).toEqual(['方法论']);expect(saved.value).toBe('gem');
+});
+
+test('detail drafts survive polling and canceled native record or import navigation',async({page,request})=>{
+ const other={...fixture,id:'native-target',title:'外部打开的记录',date:'2026-09-25'};
+ expect((await request.post('/api/restore',{headers,data:{version:2,records:[fixture,other]}})).ok()).toBeTruthy();
+ await page.goto('/');await page.locator('.record-main').first().click();await page.locator('#edit-summary').fill('后台刷新时保留的草稿');
+ const latest=(await stateOf(request)).records.find(r=>r.id===other.id);
+ expect((await request.put('/api/records',{headers,data:{...latest,title:'后台更新完成'}})).ok()).toBeTruthy();
+ await expect(page.locator('.record-title').filter({hasText:'后台更新完成'})).toHaveCount(1,{timeout:6000});
+ await expect(page.locator('#edit-summary')).toHaveValue('后台刷新时保留的草稿');expect(await page.evaluate(()=>window.__shengjiHasUnsavedChanges())).toBe(true);
+ let canceled=0;page.on('dialog',async dialog=>{canceled++;await dialog.dismiss()});
+ for(const name of ['shengji-open-record','shengji-import-result']){
+  await page.evaluate(({name,id})=>window.dispatchEvent(new CustomEvent(name,{detail:{id}})),{name,id:other.id});
+  await expect.poll(()=>canceled).toBe(name==='shengji-open-record'?1:2);
+  await expect(page.locator('#modal h2')).toHaveText(fixture.title);await expect(page.locator('#edit-summary')).toHaveValue('后台刷新时保留的草稿');
+ }
+ await page.getByRole('button',{name:'保存整理',exact:true}).click();await expect(page.locator('#modal')).not.toBeVisible();
+ expect((await stateOf(request)).records.find(r=>r.id===fixture.id).summary).toBe('后台刷新时保留的草稿');
+});
+
+
+test('completed audio leaves pairing mode so later pasted text saves as a separate record',async({page,request})=>{
+ const bytes=Buffer.alloc(44);bytes.write('RIFF',0);bytes.write('WAVE',8);bytes.write('fmt ',12);bytes.writeUInt32LE(16,16);bytes.writeUInt16LE(1,20);bytes.writeUInt16LE(1,22);bytes.writeUInt32LE(16000,24);bytes.writeUInt32LE(32000,28);bytes.writeUInt16LE(2,32);bytes.writeUInt16LE(16,34);bytes.write('data',36);
+ let failFirst=true;
+ await page.route('**/api/import-audio',async route=>{
+  if(failFirst){failFirst=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'测试暂时不可用，请重试'})})}
+  else await route.continue();
+ });
+ await page.goto('/');await page.getByRole('button',{name:'导入录音 / 文字',exact:true}).click();
+ await page.locator('#file-input').setInputFiles({name:'配套录音.wav',mimeType:'audio/wav',buffer:bytes});
+ await expect(page.locator('#pairing-note')).toContainText('配套文字稿');await page.locator('#import-submit').click();
+ await expect(page.locator('.import-queue-row.failed')).toHaveCount(1);await expect(page.locator('#pairing-note')).toContainText('配套文字稿');
+ await page.locator('#transcript-input').fill('这段文字是失败音频重试时补充的配套稿。');await page.locator('#import-submit').click();
+ await expect(page.locator('.import-queue-row.done')).toHaveCount(1);await expect(page.locator('#transcript-input')).toHaveValue('');await expect(page.locator('#pairing-note')).toContainText('文字会单独保存');
+ await page.locator('#transcript-input').fill('这是音频保存完成后单独追加的一段文字。');await page.locator('#import-submit').click();
+ await expect(page.locator('#transcript-input')).toHaveValue('');
+ const stored=(await stateOf(request)).records;const audio=stored.filter(r=>r.audio);expect(audio).toHaveLength(1);expect(audio[0].transcript).toBe('这段文字是失败音频重试时补充的配套稿。');
+ expect(stored.filter(r=>r.transcript==='这是音频保存完成后单独追加的一段文字。')).toHaveLength(1);expect(stored).toHaveLength(3);
+});
+
+
+test('detail save locks editing and native navigation until failure or success, then restores the draft',async({page,request})=>{
+ const other={...fixture,id:'saving-target',title:'保存期间不能打开的记录',date:'2026-09-25'};
+ expect((await request.post('/api/restore',{headers,data:{version:2,records:[fixture,other]}})).ok()).toBeTruthy();
+ let release;let pending=new Promise(resolve=>{release=resolve});let attempt=0;
+ await page.route('**/api/records',async route=>{
+  if(route.request().method()!=='PUT')return route.continue();
+  attempt++;await pending;
+  if(attempt===1)await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'保存暂时失败，请重试'})});else await route.continue();
+ });
+ const dialogs=[];page.on('dialog',async dialog=>{dialogs.push(dialog.message());await dialog.dismiss()});
+ await page.goto('/');await page.locator('.record-main').first().click();await page.locator('#edit-summary').fill('请求失败也必须保留的摘要');
+ await page.getByRole('button',{name:'保存整理',exact:true}).click();
+ await expect(page.locator('#edit-summary')).toBeDisabled();await expect(page.locator('[data-nav-record]')).toBeDisabled();await expect(page.locator('[data-close]')).toBeDisabled();await expect(page.locator('[data-set-value="gem"]')).toBeDisabled();
+ await page.keyboard.type('保存期间误按的键');await page.keyboard.press('Escape');await expect(page.locator('#modal')).toBeVisible();await expect(page.locator('#edit-summary')).toHaveValue('请求失败也必须保留的摘要');
+ await page.evaluate(id=>window.dispatchEvent(new CustomEvent('shengji-open-record',{detail:{id}})),other.id);await expect(page.locator('#toast')).toContainText('正在保存整理');await expect(page.locator('#modal h2')).toHaveText(fixture.title);
+ release();await expect(page.locator('#toast')).toContainText('保存暂时失败');await expect(page.locator('#edit-summary')).toBeEnabled();await expect(page.locator('#edit-summary')).toHaveValue('请求失败也必须保留的摘要');await expect(page.getByRole('button',{name:'保存整理',exact:true})).toBeEnabled();await expect(page.locator('[data-nav-record]')).toBeEnabled();
+ pending=new Promise(resolve=>{release=resolve});await page.locator('#edit-summary').fill('失败后继续修改并成功保存的摘要');await page.getByRole('button',{name:'保存整理',exact:true}).click();
+ await expect(page.locator('#edit-summary')).toBeDisabled();await page.evaluate(id=>window.dispatchEvent(new CustomEvent('shengji-import-result',{detail:{id}})),other.id);await expect(page.locator('#toast')).toContainText('正在保存整理');await expect(page.locator('#modal h2')).toHaveText(fixture.title);
+ release();await expect(page.locator('#modal')).not.toBeVisible();
+ const saved=(await stateOf(request)).records;expect(saved.find(r=>r.id===fixture.id).summary).toBe('失败后继续修改并成功保存的摘要');expect(saved.find(r=>r.id===other.id).summary).toBe(fixture.summary);expect(dialogs).toEqual([]);
 });

@@ -44,6 +44,59 @@ export function validateBackup(input){
  return obj.records;
 }
 
+export function backupHistory(input,records=input.records){
+ const history={};
+ for(const field of ['digests','weeklies','monthlies','yearlies'])history[field]=structuredClone(input[field]??{});
+ const recordActions=new Map(records.map(record=>[record.id,new Set(record.actions)])),seen=new Set();
+ history.doneActions=[];
+ for(const item of input.doneActions??[]){
+  const key=JSON.stringify([item?.recordId,item?.text]);
+  if(recordActions.get(item?.recordId)?.has(item?.text)&&!seen.has(key)){
+   history.doneActions.push({recordId:item.recordId,text:item.text,at:item.at});seen.add(key);
+  }
+ }
+ return history;
+}
+
+// Validate incoming portable history without changing how older local databases
+// load or export. Missing fields in v1/v2 backups mean no saved history.
+export function validateBackupHistory(input,records=input.records){
+ const isObject=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+ const isDay=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&localDate(new Date(`${value}T12:00:00`))===value;
+ const history={};
+ for(const field of ['digests','weeklies','monthlies','yearlies']){
+  const entries=input[field]===undefined?{}:input[field];
+  if(!isObject(entries)||Object.keys(entries).length>50000)throw new Error(`备份中的 ${field} 格式无效`);
+  history[field]={};
+  for(const [key,item] of Object.entries(entries)){
+   const fail=()=>{throw new Error(`备份中的 ${field} 回顾内容无效（${key.slice(0,20)}）`)};
+   if(!isObject(item)||typeof item.text!=='string'||!item.text.trim()||item.text.length>10000000||typeof item.generatedAt!=='string'||item.generatedAt.length>100||!Number.isFinite(Date.parse(item.generatedAt))||!['qwen','fallback'].includes(item.model)||!Number.isInteger(item.recordCount)||item.recordCount<1||item.recordCount>50000)fail();
+   if(field==='digests'){
+    if(!isDay(key)||item.date!==key)fail();
+   }else{
+    if(!isDay(item.start)||!isDay(item.end)||item.start>item.end||!Number.isInteger(item.dayCount)||item.dayCount<1||item.dayCount>item.recordCount)fail();
+    if(field==='weeklies'){
+     const start=new Date(`${item.start}T12:00:00`),end=new Date(start);end.setDate(end.getDate()+6);
+     if(key!==item.start||start.getDay()!==1||localDate(end)!==item.end||item.dayCount>7)fail();
+    }else if(field==='monthlies'){
+     if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(key)||item.month!==key||item.start!==`${key}-01`)fail();
+     const last=new Date(`${key}-01T12:00:00`);last.setMonth(last.getMonth()+1);last.setDate(0);
+     if(item.end!==localDate(last)||item.dayCount>last.getDate())fail();
+    }else if(!/^\d{4}$/.test(key)||item.year!==key||item.start!==`${key}-01-01`||item.end!==`${key}-12-31`||item.dayCount>366)fail();
+   }
+   history[field][key]=structuredClone(item);
+  }
+ }
+ const actions=input.doneActions===undefined?[]:input.doneActions;
+ if(!Array.isArray(actions)||actions.length>500000)throw new Error('备份中的待办完成状态格式无效');
+ for(const item of actions){
+  if(!isObject(item)||typeof item.recordId!=='string'||!item.recordId.trim()||item.recordId.length>200||typeof item.text!=='string'||!item.text.trim()||item.text.length>20000||!isDay(item.at))throw new Error('备份中的待办完成状态内容无效');
+ }
+ // Deleted records and rewritten actions can leave historical completion
+ // markers locally; they must not attach to unrelated content on restore.
+ return backupHistory({...history,doneActions:actions},records);
+}
+
 export function validateCategories(list){
  if(!Array.isArray(list)||list.length<1||list.length>60)throw new Error('分类数量应为 1–60 个');
  const ids=new Set(),names=new Set();for(const c of list){
