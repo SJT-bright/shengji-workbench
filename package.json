@@ -9,7 +9,7 @@
     "preview": "vite preview --host 127.0.0.1 --port 5178",
     "app:build": "./scripts/build-app.sh",
     "start": "node server.mjs",
-    "test": "node --test tests/ai.test.mjs tests/server.test.mjs tests/transcribe.test.mjs tests/store.test.mjs tests/cleanup.test.mjs tests/record-qa.test.mjs tests/connectors.test.mjs tests/connector-routes.test.mjs tests/device-connections.test.mjs"
+    "test": "node --test tests/ai.test.mjs tests/server.test.mjs tests/transcribe.test.mjs tests/store.test.mjs tests/store-perf.test.mjs tests/cleanup.test.mjs tests/record-qa.test.mjs tests/connectors.test.mjs tests/connector-routes.test.mjs tests/device-connections.test.mjs tests/gc.test.mjs tests/hardening.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

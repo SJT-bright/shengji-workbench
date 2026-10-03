@@ -13,6 +13,8 @@ import {answerFromRecords,findRelevantRecords} from './record-qa.mjs';
 import {handleConnectorApi} from './connector-routes.mjs';
 import {createConnectorService} from './connectors/index.mjs';
 const base=path.dirname(fileURLToPath(import.meta.url));
+/* /api/health 版本号单一事实源：模块加载时读 package.json，读失败回退内置值 */
+let appVersion='0.4.0';try{appVersion=JSON.parse(fs.readFileSync(path.join(base,'package.json'),'utf8')).version||appVersion}catch(e){console.error('读取 package.json 版本失败，回退内置版本 0.4.0：',e?.message||e)}
 const port=Number(process.env.SHENGJI_PORT||5189);
 const token=process.env.SHENGJI_TOKEN||crypto.randomUUID();
 const dataDir=process.env.SHENGJI_DATA_DIR||path.join(os.homedir(),'Library','Application Support','Shengji');
@@ -28,6 +30,8 @@ db.digests=db.digests&&typeof db.digests==='object'&&!Array.isArray(db.digests)?
 db.weeklies=db.weeklies&&typeof db.weeklies==='object'&&!Array.isArray(db.weeklies)?db.weeklies:{};db.monthlies=db.monthlies&&typeof db.monthlies==='object'&&!Array.isArray(db.monthlies)?db.monthlies:{};db.yearlies=db.yearlies&&typeof db.yearlies==='object'&&!Array.isArray(db.yearlies)?db.yearlies:{};db.doneActions=Array.isArray(db.doneActions)?db.doneActions:[];
 db.categories=validateCategories(db.categories?.length?db.categories:structuredClone(categories));db.categoryRevision||=0;validateBackup(db);
 const audioDir=path.join(dataDir,'audio');fs.mkdirSync(audioDir,{recursive:true,mode:0o700});
+/* 目录已存在时 mkdirSync 的 mode 不生效：启动时统一补一次 chmod，失败仅记录、不阻断启动 */
+for(const dir of [originalsDir,audioDir]){try{fs.chmodSync(dir,0o700)}catch(e){console.error(`目录权限收紧失败（${dir}）：`,e?.message||e)}}
 function persist(next){next.revision=(db.revision||0)+1;store.save(next);db=next;}
 function mutate(fn){const next=structuredClone(db);fn(next);persist(next)}
 for(const r of db.records){if(r.ai?.status==='running')r.ai.status='queued';if(r.transcription?.status==='running')r.transcription.status='queued';}
@@ -42,6 +46,11 @@ function validateValueFields(r){
  if(r.gemTags!==undefined){if(!Array.isArray(r.gemTags)||r.gemTags.length>5||r.gemTags.some(t=>typeof t!=='string'||t.trim().length>16))throw new Error('标签格式无效');r.gemTags=r.gemTags.map(t=>t.trim()).filter(Boolean);}
  return r;
 }
+/* PUT /api/records 编辑白名单：只接受 validateRecord/validateValueFields 覆盖的业务字段，
+   其余自造键一律丢弃，防止垃圾数据入库并被 /api/state 每次回显。
+   其中 transcript/source/ai/categoryManual/revision 组装时仍以服务端 current/重算值为准
+   （与旧行为一致，客户端不可借 PUT 改写），audio/transcription 不在白名单、强制取自 current。 */
+const recordFieldKeys=new Set(['id','title','category','date','time','duration','transcript','summary','highlights','learnings','actions','reviewed','favorite','demo','cleanedTranscript','cleanup','value','valueSource','gemTags','reviewCount','lastReviewedAt','categoryManual','revision','source','ai']);
 function newRecord({text,filename='',date,time,duration=0,title='',category,autoAnalyze=db.settings.autoAnalyze,sourcePath='',sourceKind='',dateBasis='导入时间'}){
  if(typeof text!=='string'||!text.trim())throw new Error('没有可导入的转写文字');
  if(text.length>500000)throw new Error('转写文字过长，请分段导入');
@@ -61,7 +70,7 @@ function audioMime(bytes,name){
 }
 function decodeAudio(data,name){
  if(typeof name!=='string'||!name||name.length>255||typeof data!=='string'||data.length>140*1024*1024||!data.length||data.length%4||!/^[A-Za-z0-9+/]*={0,2}$/.test(data))throw new Error('音频数据无效或超过 100 MB');
- const bytes=Buffer.from(data,'base64');if(bytes.length<12||bytes.length>100*1024*1024||bytes.toString('base64')!==data)throw new Error('音频数据无效或超过 100 MB');audioMime(bytes,name);return bytes;
+ const bytes=Buffer.from(data,'base64');/* 长度/4KB 对齐/字符集已在入口校验，省去与原图等大的回环 base64 比较 */if(bytes.length<12||bytes.length>100*1024*1024)throw new Error('音频数据无效或超过 100 MB');audioMime(bytes,name);return bytes;
 }
 function preserveAudio(bytes,hash){const file=path.join(audioDir,hash);if(!fs.existsSync(file))fs.writeFileSync(file,bytes,{mode:0o600,flag:'wx'})}
 function newAudioRecord(input){
@@ -109,26 +118,53 @@ async function runQueue(){
   }else{
    mutate(n=>{n.records.find(r=>r.id===record.id).ai={...record.ai,status:'running',error:'',runId}});
    mutate(n=>{n.records.find(r=>r.id===record.id).ai.phase='cleanup'});
-   const cleaned=await cleanTranscript(record.transcript,{model:db.settings.model,signal:activeAbort.signal});
+   const cleaned=await cleanTranscript(record.transcript,{model:db.settings.model,signal:activeAbort.signal,onProgress:(done,total)=>mutate(n=>{const r=n.records.find(r=>r.id===record.id);if(r?.ai.runId===runId)r.ai.cleanupProgress={done,total}})});
    mutate(n=>{const r=n.records.find(r=>r.id===record.id);if(r?.ai.runId===runId)r.ai.phase='summary'});
    const result=await analyzeTranscript(record.transcript,{model:db.settings.model,signal:activeAbort.signal,categories:db.categories});
    const current=db.records.find(r=>r.id===record.id);
    if(current?.ai?.status==='running'&&current.ai.runId===runId){
     if((current.revision||0)!==startingRevision)mutate(n=>{n.records.find(r=>r.id===record.id).ai={...current.ai,status:'failed',error:'整理期间记录已被修改，未覆盖你的内容。请重新整理。'}});
-    else mutate(n=>{const r=n.records.find(r=>r.id===record.id);Object.assign(r,{title:result.title.replace(/[。．.]+$/u,'')||result.title,cleanedTranscript:cleaned.text,cleanup:{model:cleaned.model,cleanedAt:cleaned.cleanedAt,coverage:cleaned.coverage,method:cleaned.method},category:r.categoryManual?r.category:(n.categories.some(c=>c.id===result.category)?result.category:'inbox'),summary:result.summary,highlights:result.highlights,learnings:result.learnings,actions:result.actions,revision:startingRevision+1,ai:{status:'done',reason:result.reason,confidence:result.confidence,model:result.model,analyzedAt:result.analyzedAt,coverage:result.coverage,error:''}});applyAiValue(r,result.value)});
+     else mutate(n=>{const r=n.records.find(r=>r.id===record.id);const cleanupFailed=cleaned.chunksFailed||0;Object.assign(r,{title:result.title.replace(/[。．.]+$/u,'')||result.title,cleanedTranscript:cleaned.text,cleanup:{model:cleaned.model,cleanedAt:cleaned.cleanedAt,coverage:cleaned.coverage,method:cleaned.method,chunksFailed:cleanupFailed},category:r.categoryManual?r.category:(n.categories.some(c=>c.id===result.category)?result.category:'inbox'),summary:result.summary,highlights:result.highlights,learnings:result.learnings,actions:result.actions,revision:startingRevision+1,ai:{status:'done',reason:cleanupFailed>0?`${result.reason}有 ${cleanupFailed} 块未能清理，已保留原文。`:result.reason,confidence:result.confidence,model:result.model,analyzedAt:result.analyzedAt,coverage:result.coverage,error:''}});applyAiValue(r,result.value)});
    }
   }
  }catch(e){
-  const current=db.records.find(r=>r.id===record.id),field=isTranscribing?'transcription':'ai';
-  if(current?.[field]?.status==='running'&&current[field].runId===runId)mutate(n=>{n.records.find(r=>r.id===record.id)[field]={...current[field],status:'failed',error:String(e.message||'处理失败').slice(0,600)}});
+  try{
+   const current=db.records.find(r=>r.id===record.id),field=isTranscribing?'transcription':'ai';
+   if(current?.[field]?.status==='running'&&current[field].runId===runId)mutate(n=>{n.records.find(r=>r.id===record.id)[field]={...current[field],status:'failed',error:String(e.message||'处理失败').slice(0,600)}});
+  }catch(persistError){
+   console.error('队列失败状态持久化失败：',persistError?.message||persistError);
+   /* 落盘失败会让记录停在 running 且无重试入口：延迟后在内存里翻回 queued，交给 runQueue 再走一轮 */
+   setTimeout(()=>{try{mutate(n=>{const rr=n.records.find(x=>x.id===record.id),f=isTranscribing?'transcription':'ai';if(rr?.[f]?.status==='running'&&rr[f].runId===runId)rr[f]={...rr[f],status:'queued',error:''}})}catch(e2){console.error('队列状态恢复仍失败：',e2?.message||e2)}},5000);
+  }
  }finally{busy=false;activeId=null;activeAbort=null;setTimeout(runQueue,200)}
 }
+/* 兜底：磁盘写满等持久化异常不允许拖垮整个本地服务 */
+process.on('unhandledRejection',e=>console.error('未处理的异步错误：',e?.stack||e));
+process.on('uncaughtException',e=>console.error('未捕获异常：',e?.stack||e));
+
+/* 孤儿附件回收：originals/ 与 audio/ 只写不删，按引用计数清理不再被任何记录引用的文件 */
+function referencedHashes(){const refs=new Set();for(const r of db.records){if(r.audio?.hash)refs.add(r.audio.hash);if(r.source?.hash)refs.add(r.source.hash);if(r.transcript)refs.add(cleanHash(r.transcript))}return refs}
+function cleanupOrphans(){
+ const refs=referencedHashes(),now=Date.now();let removed=0;
+ for(const [dir,suffix] of [[originalsDir,'.txt'],[audioDir,'']]){
+  let names;try{names=fs.readdirSync(dir)}catch{continue}
+  for(const name of names){
+   if(!name.endsWith(suffix)||name.length!==64+suffix.length||!/^[a-f0-9]{64}$/.test(name.slice(0,64))||refs.has(name.slice(0,64)))continue;
+   try{const file=path.join(dir,name),stat=fs.statSync(file);if(stat.isFile()&&now-stat.mtimeMs>60000){fs.unlinkSync(file);removed++}}
+   catch{}
+  }
+ }
+ if(removed)console.error(`孤儿文件回收：已删除 ${removed} 个不再被任何记录引用的文件（超过 60 秒宽限期）`);
+}
+function runCleanupSafely(){try{cleanupOrphans()}catch(e){console.error('孤儿文件回收失败：',e?.stack||e)}}
+let gcTimer=null;
+function scheduleCleanup(){if(gcTimer)return;gcTimer=setTimeout(()=>{gcTimer=null;runCleanupSafely()},1000);gcTimer.unref()}
 
 let stability=new Map(),watchError='',lastScan='',scanBusy=false;
-function scan(){if(scanBusy||!db.settings.watchEnabled)return;scanBusy=true;const errors=[];try{const folder=fs.realpathSync(db.settings.watchFolder);const names=fs.readdirSync(folder);const present=new Set();for(const name of names){if(name.startsWith('.')||! /\.(txt|md|srt|vtt|mp3|m4a|wav)$/i.test(name))continue;const f=path.join(folder,name);try{const stat=fs.lstatSync(f);if(!stat.isFile()||stat.isSymbolicLink())continue;present.add(f);const isAudio=/\.(mp3|m4a|wav)$/i.test(name);if(stat.size>(isAudio?100:5)*1024*1024)throw new Error('文件过大，未自动导入');const mark=`${stat.size}:${stat.mtimeMs}`;if(stability.get(f)!==mark){stability.set(f,mark);continue}if(isAudio){const bytes=fs.readFileSync(f);if(!db.seenHashes.includes(cleanHash(bytes)))newAudioRecord({audio:{name,data:bytes.toString('base64')},sourcePath:f,date:localDate(stat.mtime),time:stat.mtime.toTimeString().slice(0,5),dateBasis:'文件修改时间（可手动更正）'});continue}let raw;try{raw=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(fs.readFileSync(f))}catch{throw new Error('不是有效的 UTF-8 文字，请重新导出')}if(!raw.trim())continue;if(raw.includes('\u0000'))throw new Error('不是纯文字文件，请重新导出');const hash=cleanHash(parseTranscript(raw,name));if(db.seenHashes.includes(hash))continue;const modified=stat.mtime;newRecord({text:raw,filename:name,sourcePath:f,date:localDate(modified),time:modified.toTimeString().slice(0,5),dateBasis:'文件修改时间（可手动更正）'});}catch(e){errors.push(`${name}：${e.message}`)}}for(const key of stability.keys())if(!present.has(key))stability.delete(key);lastScan=new Date().toISOString();watchError=errors.slice(0,3).join('；');}catch(e){watchError=`无法读取监测文件夹：${e.code==='ENOENT'?'文件夹不存在':e.code==='EACCES'?'没有访问权限':e.message}`}finally{scanBusy=false}}
+async function scan(){if(scanBusy||!db.settings.watchEnabled)return;scanBusy=true;const errors=[];try{const folder=fs.realpathSync(db.settings.watchFolder);const names=fs.readdirSync(folder);const present=new Set();for(const name of names){if(name.startsWith('.')||! /\.(txt|md|srt|vtt|mp3|m4a|wav)$/i.test(name))continue;const f=path.join(folder,name);try{const stat=fs.lstatSync(f);if(!stat.isFile()||stat.isSymbolicLink())continue;present.add(f);const isAudio=/\.(mp3|m4a|wav)$/i.test(name);if(stat.size>(isAudio?100:5)*1024*1024)throw new Error('文件过大，未自动导入');const mark=`${stat.size}:${stat.mtimeMs}`;if(stability.get(f)!==mark){stability.set(f,mark)}else if(isAudio){const bytes=await fs.promises.readFile(f);if(bytes.length>100*1024*1024)throw new Error('文件过大，未自动导入');if(!db.seenHashes.includes(cleanHash(bytes)))newAudioRecord({audio:{name,data:bytes.toString('base64')},sourcePath:f,date:localDate(stat.mtime),time:stat.mtime.toTimeString().slice(0,5),dateBasis:'文件修改时间（可手动更正）'})}else{let raw;try{raw=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(await fs.promises.readFile(f))}catch{throw new Error('不是有效的 UTF-8 文字，请重新导出')}if(raw.trim()){if(raw.includes('\u0000'))throw new Error('不是纯文字文件，请重新导出');const hash=cleanHash(parseTranscript(raw,name));if(!db.seenHashes.includes(hash)){const modified=stat.mtime;newRecord({text:raw,filename:name,sourcePath:f,date:localDate(modified),time:modified.toTimeString().slice(0,5),dateBasis:'文件修改时间（可手动更正）'})}}}}catch(e){errors.push(`${name}：${e.message}`)}await new Promise(r=>setImmediate(r))}for(const key of stability.keys())if(!present.has(key))stability.delete(key);lastScan=new Date().toISOString();watchError=errors.slice(0,3).join('；');}catch(e){watchError=`无法读取监测文件夹：${e.code==='ENOENT'?'文件夹不存在':e.code==='EACCES'?'没有访问权限':e.message}`}finally{scanBusy=false}}
 
-const timer=setInterval(scan,5000);timer.unref();setTimeout(()=>{scan();runQueue()},500);
-async function readBody(req){const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>500*1024*1024)throw new Error('请求超过 500 MB，请分批导入');chunks.push(chunk)}return JSON.parse(Buffer.concat(chunks).toString()||'{}')}
+const timer=setInterval(scan,5000);timer.unref();setTimeout(()=>{scan();runQueue()},500);setTimeout(runCleanupSafely,10000).unref();
+async function readBody(req,sizeLimit=2*1024*1024){const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>sizeLimit)throw new Error(`请求体过大（超过 ${Math.round(sizeLimit/1024/1024)} MB），请分批导入`);chunks.push(chunk)}return JSON.parse(Buffer.concat(chunks).toString()||'{}')}
 function digestFallback(day,records){
  const [,month,dayOfMonth]=day.split('-').map(Number);
  const head=(text,len=40)=>{const s=String(text||'').trim();if(!s)return '';return ((s.split(/(?<=[。！？!?…；;\n])/)[0]||s).trim()).slice(0,len)};
@@ -220,7 +256,7 @@ const server=http.createServer(async(req,res)=>{try{
  const url=new URL(req.url,`http://127.0.0.1:${port}`),p=url.pathname;
  if(req.headers.origin&&!allowedOrigins.has(req.headers.origin))return json(res,403,{error:'不允许外部网页访问本地记录'});
  if(req.headers['sec-fetch-site']==='cross-site')return json(res,403,{error:'不允许跨站访问'});
- if(p==='/api/health')return json(res,200,{ok:true,app:'shengji',version:'0.4.0'});
+ if(p==='/api/health')return json(res,200,{ok:true,app:'shengji',version:appVersion});
  if(p==='/api/session'&&req.method==='GET')return json(res,200,{token});
  if(p.startsWith('/api/')&&req.headers['x-shengji-token']!==token)return json(res,401,{error:'请重新打开声迹以连接本地服务'});
  if(await handleConnectorApi(req,res,{service:connectorService,readBody,json}))return;
@@ -233,7 +269,7 @@ const server=http.createServer(async(req,res)=>{try{
   return json(res,200,await answerFromRecords(question,candidates,{model:db.settings.model,signal:controller.signal}));
  }
  if(p==='/api/queue'&&req.method==='POST'){const input=await readBody(req);if(typeof input.paused!=='boolean')throw new Error('队列状态无效');mutate(n=>{n.settings.processingPaused=input.paused});queueMicrotask(runQueue);return json(res,200,{paused:db.settings.processingPaused,activeId});}
- if(p==='/api/models'&&req.method==='GET'){try{let result=await fetch('http://127.0.0.1:11434/api/tags',{signal:AbortSignal.timeout(4000)});if(!result.ok)throw new Error('模型服务未响应');const data=await result.json();return json(res,200,{available:true,models:(data.models||[]).filter(m=>['qwen2.5:7b','qwen3:14b'].includes(m.name)&&!m.remote_host).map(m=>({id:m.name,size:m.size})),error:''})}catch{return json(res,200,{available:false,models:[],error:'本地 Ollama 未运行，请打开 Ollama 后重试。原文仍会正常保存。'})}}
+ if(p==='/api/models'&&req.method==='GET'){try{let result=await fetch('http://127.0.0.1:11434/api/tags',{signal:AbortSignal.timeout(4000)});if(!result.ok)throw new Error('模型服务未响应');const data=await result.json();return json(res,200,{available:true,memoryGB:Math.round(os.totalmem()/2**30),models:(data.models||[]).filter(m=>['qwen2.5:7b','qwen3:14b'].includes(m.name)&&!m.remote_host).map(m=>({id:m.name,size:m.size})),error:''})}catch{return json(res,200,{available:false,models:[],error:'本地 Ollama 未运行，请打开 Ollama 后重试。原文仍会正常保存。'})}}
  if(p==='/api/transcription-status'&&req.method==='GET')return json(res,200,await getTranscriptionStatus());
  if(p==='/api/transcribe'&&req.method==='POST'){const {id}=await readBody(req);const r=db.records.find(r=>r.id===id);if(!r?.audio)throw new Error('音频不存在');if(r.transcript)throw new Error('已有文字稿，不会覆盖；可直接进行 AI 整理');if(!['queued','running'].includes(r.transcription?.status))mutate(n=>{const current=n.records.find(r=>r.id===id);current.transcription={...current.transcription,status:'queued',error:'',autoAnalyze:n.settings.autoAnalyze}});queueMicrotask(runQueue);return json(res,200,{ok:true})}
  if(p==='/api/categories'&&req.method==='PUT'){
@@ -241,7 +277,7 @@ const server=http.createServer(async(req,res)=>{try{
  if(input.revision!==db.categoryRevision)return json(res,409,{error:'分类已更新，请重新打开管理分类'});
  mutate(n=>{n.categories=list;n.categoryRevision++;for(const r of n.records)if(!list.some(c=>c.id===r.category)){r.category='inbox';r.categoryManual=false;r.revision=(r.revision||0)+1}});return json(res,200,{ok:true});
  }
- if(p==='/api/import-audio'&&req.method==='POST')return json(res,200,newAudioRecord(await readBody(req)));
+ if(p==='/api/import-audio'&&req.method==='POST')return json(res,200,newAudioRecord(await readBody(req,200*1024*1024)));
  if(p.startsWith('/api/audio/')&&req.method==='GET'){
  const r=db.records.find(r=>r.id===decodeURIComponent(p.slice(11)));if(!r?.audio)return json(res,404,{error:'音频不存在'});
  validateAudio(r.audio);const file=path.join(audioDir,r.audio.hash);if(!fs.existsSync(file))throw new Error('音频附件缺失，请恢复完整备份');
@@ -256,8 +292,8 @@ const server=http.createServer(async(req,res)=>{try{
  mutate(n=>{const r=n.records.find(r=>r.id===input.id);r.transcript=text;r.source.transcriptName=input.filename||'粘贴转写';r.source.hash=hash;r.revision++;r.transcription={status:'done',engine:'manual',error:'',autoAnalyze:!!input.autoAnalyze};r.ai={status:input.autoAnalyze?'queued':'none',error:'',model:n.settings.model}});queueMicrotask(runQueue);return json(res,200,{ok:true});
  }
  if(p==='/api/import'&&req.method==='POST')return json(res,200,newRecord(await readBody(req)));
- if(p==='/api/records'&&req.method==='PUT'){const input=await readBody(req);validateRecord(input,db.categories);validateValueFields(input);const current=db.records.find(r=>r.id===input.id);if(!current)return json(res,404,{error:'记录不存在'});if((input.revision||0)!==(current.revision||0))return json(res,409,{error:'记录已更新，请重新打开后编辑，避免覆盖新内容'});const saved={...input,audio:current.audio,transcription:current.transcription,categoryManual:input.category!==current.category?true:current.categoryManual,source:{...current.source,...((input.date!==current.date||input.time!==current.time)?{dateBasis:'手动设置'}:{})},ai:current.ai,transcript:current.transcript,revision:(current.revision||0)+1};mutate(n=>{n.records[n.records.findIndex(r=>r.id===input.id)]=saved});return json(res,200,saved)}
- if(p==='/api/records'&&req.method==='DELETE'){const {id}=await readBody(req);if(activeId===id)activeAbort?.abort();mutate(n=>{n.records=n.records.filter(r=>r.id!==id)});return json(res,200,{ok:true})}
+ if(p==='/api/records'&&req.method==='PUT'){const input=await readBody(req);validateRecord(input,db.categories);validateValueFields(input);const current=db.records.find(r=>r.id===input.id);if(!current)return json(res,404,{error:'记录不存在'});if((input.revision||0)!==(current.revision||0))return json(res,409,{error:'记录已更新，请重新打开后编辑，避免覆盖新内容'});const picked={};for(const k of recordFieldKeys)if(input[k]!==undefined)picked[k]=input[k];const saved={...picked,audio:current.audio,transcription:current.transcription,categoryManual:input.category!==current.category?true:current.categoryManual,source:{...current.source,...((input.date!==current.date||input.time!==current.time)?{dateBasis:'手动设置'}:{})},ai:current.ai,transcript:current.transcript,revision:(current.revision||0)+1};mutate(n=>{n.records[n.records.findIndex(r=>r.id===input.id)]=saved});return json(res,200,saved)}
+ if(p==='/api/records'&&req.method==='DELETE'){const {id}=await readBody(req);if(activeId===id)activeAbort?.abort();mutate(n=>{n.records=n.records.filter(r=>r.id!==id)});queueMicrotask(scheduleCleanup);return json(res,200,{ok:true})}
  if(p==='/api/analyze'&&req.method==='POST'){const {id}=await readBody(req);const r=db.records.find(r=>r.id===id);if(!r)return json(res,404,{error:'记录不存在'});if(!r.transcript.trim())throw new Error('请先补充文字稿，再进行 AI 整理');if(!['queued','running'].includes(r.ai?.status))mutate(n=>{n.records.find(r=>r.id===id).ai={...r.ai,status:'queued',error:'',model:db.settings.model}});queueMicrotask(runQueue);return json(res,200,{ok:true})}
  if(p==='/api/digest'&&req.method==='POST'){
  const {date:day}=await readBody(req);
@@ -311,19 +347,40 @@ const server=http.createServer(async(req,res)=>{try{
  mutate(n=>{n.doneActions=Array.isArray(n.doneActions)?n.doneActions:[];if(input.done){if(!n.doneActions.some(a=>a.recordId===input.recordId&&a.text===input.text))n.doneActions.push({recordId:input.recordId,text:input.text,at:localDate()})}else n.doneActions=n.doneActions.filter(a=>a.recordId!==input.recordId||a.text!==input.text)});
  return json(res,200,{doneActions:db.doneActions});
  }
- if(p==='/api/settings'&&req.method==='PUT'){const input=await readBody(req);if(!['qwen2.5:7b','qwen3:14b'].includes(input.model)||typeof input.watchEnabled!=='boolean'||typeof input.autoAnalyze!=='boolean'||typeof input.watchFolder!=='string')throw new Error('设置格式无效');const folder=fs.realpathSync(input.watchFolder);if(!fs.statSync(folder).isDirectory())throw new Error('请选择一个文件夹');fs.accessSync(folder,fs.constants.R_OK);mutate(n=>{n.settings={...n.settings,model:input.model,watchEnabled:input.watchEnabled,autoAnalyze:input.autoAnalyze,watchFolder:folder}});stability.clear();watchError='';scan();return json(res,200,db.settings)}
- if(p==='/api/scan'&&req.method==='POST'){scan();return json(res,200,{ok:true,error:watchError,lastScan})}
+ if(p==='/api/settings'&&req.method==='PUT'){const input=await readBody(req);if(!['qwen2.5:7b','qwen3:14b'].includes(input.model)||typeof input.watchEnabled!=='boolean'||typeof input.autoAnalyze!=='boolean'||typeof input.watchFolder!=='string')throw new Error('设置格式无效');const folder=fs.realpathSync(input.watchFolder);if(!fs.statSync(folder).isDirectory())throw new Error('请选择一个文件夹');fs.accessSync(folder,fs.constants.R_OK);mutate(n=>{n.settings={...n.settings,model:input.model,watchEnabled:input.watchEnabled,autoAnalyze:input.autoAnalyze,watchFolder:folder}});stability.clear();watchError='';await scan();return json(res,200,db.settings)}
+ if(p==='/api/scan'&&req.method==='POST'){await scan();return json(res,200,{ok:true,error:watchError,lastScan})}
  if(p==='/api/backup'&&req.method==='GET'){
-  const history=backupHistory(db),originals={},audioFiles={};
-  for(const r of db.records){
-   if(r.audio)audioFiles[r.audio.hash]=fs.readFileSync(path.join(audioDir,r.audio.hash)).toString('base64');
-   const hash=cleanHash(r.transcript),file=path.join(originalsDir,hash+'.txt');
-   originals[hash]=fs.existsSync(file)?fs.readFileSync(file,'utf8'):r.transcript;
+  /* 分块写出：响应仍是一个完整 JSON（字段与旧实现完全一致），但不再把全部音频读进内存拼整包字符串 */
+  const history=backupHistory(db);
+  try{
+   res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+   res.write(JSON.stringify({version:2,exportedAt:new Date().toISOString(),records:db.records,categories:db.categories,...history}).slice(0,-1)+',"audioFiles":{');
+   let first=true;
+   for(const hash of new Set(db.records.filter(r=>r.audio).map(r=>r.audio.hash))){
+    const bytes=await fs.promises.readFile(path.join(audioDir,hash));
+    res.write(`${first?'':','}${JSON.stringify(hash)}:"${bytes.toString('base64')}"`);first=false;
+    await new Promise(r=>setImmediate(r));
+   }
+   res.write('},"originals":{');
+   const fallbacks=new Map();
+   for(const r of db.records){const hash=cleanHash(r.transcript);if(!fallbacks.has(hash))fallbacks.set(hash,r.transcript)}
+   first=true;
+   for(const [hash,fallback] of fallbacks){
+    const file=path.join(originalsDir,hash+'.txt');
+    const raw=fs.existsSync(file)?await fs.promises.readFile(file,'utf8'):fallback;
+    res.write(`${first?'':','}${JSON.stringify(hash)}:${JSON.stringify(raw)}`);first=false;
+    await new Promise(r=>setImmediate(r));
+   }
+   res.end('}}');
+  }catch(e){
+   /* 响应已开始就只能断开，让客户端把这次备份当作损坏重试 */
+   if(res.headersSent)res.destroy();else json(res,400,{error:String(e.message||'操作失败').slice(0,700)});
+   console.error('备份导出失败：',e?.stack||e);
   }
-  return json(res,200,{version:2,exportedAt:new Date().toISOString(),records:db.records,categories:db.categories,...history,originals,audioFiles});
+  return;
  }
  if((p==='/api/restore'||p==='/api/migrate')&&req.method==='POST'){
-  const input=await readBody(req),imported=validateBackup(input),history=validateBackupHistory(input,imported);
+  const input=await readBody(req,200*1024*1024),imported=validateBackup(input),history=validateBackupHistory(input,imported);
   if(p==='/api/migrate'&&db.records.length)return json(res,409,{error:'应用中已有记录，请使用备份恢复入口迁移'});
   const staged=[],stagedAudio=[];
   for(const r of imported){
@@ -349,6 +406,7 @@ const server=http.createServer(async(req,res)=>{try{
    n.seenHashes=[...new Set([...n.seenHashes,...imported.flatMap(r=>[r.source.hash,...(r.audio?[r.audio.hash]:[])])])];
   });
   libraryGeneration++;
+  queueMicrotask(scheduleCleanup);
   return json(res,200,{ok:true,count:imported.length});
  }
  if(p==='/api/clear-demo'&&req.method==='POST'){mutate(n=>{n.records=n.records.filter(r=>!r.demo)});return json(res,200,{ok:true})}

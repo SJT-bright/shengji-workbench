@@ -12,7 +12,7 @@ test('production candidate IDs avoid model offset arithmetic and retain negation
  mock(t,async(_url,options)=>{const payload=userPayload(options);assert.deepEqual(payload.candidates.map(c=>c.quote),['嗯','呃']);assert.deepEqual(JSON.parse(options.body).format.required,['removeIds']);return response({removeIds:[0,1]})});
  assert.equal((await cleanTranscript(text)).text,'不是周五，是周一。预算三千元。');
 });
-test('unknown candidate IDs cannot delete arbitrary content',async t=>{mock(t,async()=>response({removeIds:[900]}));await assert.rejects(cleanTranscript('嗯，预算三千元。'),/编号/)});
+test('unknown candidate IDs cannot delete arbitrary content and pass the chunk through raw',async t=>{mock(t,async()=>response({removeIds:[900]}));const output=await cleanTranscript('嗯，预算三千元。');assert.equal(output.text,'嗯，预算三千元。');assert.equal(output.chunksFailed,1)});
 
 test('every chunk is requested and coverage equals the original', async t => {
   const sentence = `${'甲'.repeat(1900)}。`;
@@ -36,6 +36,7 @@ test('every chunk is requested and coverage equals the original', async t => {
   assert.equal(output.text, text);
   assert.equal(output.coverage.characters, text.length);
   assert.equal(output.coverage.chunks, received.length);
+  assert.equal(output.chunksFailed, 0);
   assert.equal(output.method, 'model-noop');
   assert.equal(output.model, 'qwen2.5:7b');
   assert.ok(Number.isFinite(Date.parse(output.cleanedAt)));
@@ -83,18 +84,26 @@ test('negation and number deletions are refused while a real filler may go', asy
   assert.equal(output.text.includes('嗯'), false);
 });
 
-test('a rewritten full sentence is rejected', async t => {
+test('a rewritten full sentence is never applied and the chunk passes through raw', async t => {
   mock(t, async () => response({ cleanedText: '预算保持不变。' }));
-  await assert.rejects(cleanTranscript('不要把预算改成300。'), /改写|非删除/);
+  const output = await cleanTranscript('不要把预算改成300。');
+  assert.equal(output.text, '不要把预算改成300。');
+  assert.equal(output.chunksFailed, 1);
 });
 
-test('out of range, unknown quote and excess occurrence fail the call', async t => {
+test('out of range, unknown quote and excess occurrence leave the chunk raw', async t => {
   mock(t, async () => response({ deletions: [{ start: 0, end: 50, quote: '嗯' }] }));
-  await assert.rejects(cleanTranscript('今天嗯开会。'), /对齐/);
+  let output = await cleanTranscript('今天嗯开会。');
+  assert.equal(output.text, '今天嗯开会。');
+  assert.equal(output.chunksFailed, 1);
   globalThis.fetch = async () => response({ deletions: [{ quote: '完全编造', occurrence: 1 }] });
-  await assert.rejects(cleanTranscript('今天嗯开会。'), /对齐/);
+  output = await cleanTranscript('今天嗯开会。');
+  assert.equal(output.text, '今天嗯开会。');
+  assert.equal(output.chunksFailed, 1);
   globalThis.fetch = async () => response({ deletions: [{ quote: '嗯', occurrence: 2 }] });
-  await assert.rejects(cleanTranscript('今天嗯开会。'), /对齐/);
+  output = await cleanTranscript('今天嗯开会。');
+  assert.equal(output.text, '今天嗯开会。');
+  assert.equal(output.chunksFailed, 1);
 });
 
 test('occurrence and offsets delete only the chosen repeat', async t => {
@@ -112,16 +121,21 @@ test('occurrence and offsets delete only the chosen repeat', async t => {
   assert.ok(both.text.includes('那个文件'));
 });
 
-test('a later chunk failure returns no partial text', async t => {
+test('a failed chunk passes through raw while the other chunks still clean', async t => {
   const text = `${'甲'.repeat(2000)}嗯。${'乙'.repeat(2000)}。${'丙'.repeat(2000)}。`;
   let calls = 0;
-  mock(t, async () => {
+  const progress = [];
+  mock(t, async (_url, options) => {
     calls++;
     if (calls === 2) throw new TypeError('offline');
-    return response({ deletions: [{ quote: '嗯', occurrence: 1 }] });
+    const source = userPayload(options).segment.text;
+    return source.includes('嗯') ? response({ deletions: [{ quote: '嗯', occurrence: 1 }] }) : none();
   });
-  await assert.rejects(cleanTranscript(text), /无法连接/);
-  assert.equal(calls, 2);
+  const output = await cleanTranscript(text, { onProgress: (done, total) => progress.push([done, total]) });
+  assert.equal(calls, 3);
+  assert.equal(output.chunksFailed, 1);
+  assert.equal(output.text, `${'甲'.repeat(2000)}。${'乙'.repeat(2000)}。${'丙'.repeat(2000)}。`);
+  assert.deepEqual(progress, [[1, 3], [2, 3], [3, 3]]);
 });
 
 test('cancellation rejects before fetch and aborts an in-flight request', async t => {
@@ -173,6 +187,7 @@ test('empty text and whitespace skip the model', async t => {
     assert.equal(output.method, 'passthrough');
     assert.equal(output.coverage.characters, text.length);
     assert.equal(output.coverage.chunks, 0);
+    assert.equal(output.chunksFailed, 0);
   }
   assert.equal(calls, 0);
 });
@@ -189,7 +204,9 @@ test('emoji surrogate pairs stay intact and a split offset fails', async t => {
     if (emoji === -1) return none();
     return response({ deletions: [{ start: emoji, end: emoji + 1 }] });
   });
-  await assert.rejects(cleanTranscript(text), /切开了字符|对齐/);
+  const broken = await cleanTranscript(text);
+  assert.equal(broken.text, text);/* 高位代理删除非法 → 该块原文透传，😀 完整保留 */
+  assert.equal(broken.chunksFailed, 1);
   globalThis.fetch = async (_url, options) => {
     const source = userPayload(options).segment.text;
     return source.includes('嗯') ? response({ deletions: [{ quote: '嗯', occurrence: 1 }] }) : none();
@@ -198,11 +215,16 @@ test('emoji surrogate pairs stay intact and a split offset fails', async t => {
   assert.ok(output.text.includes('😀'));
   assert.equal(output.text.includes('嗯'), false);
   assert.equal(output.coverage.characters, text.length);
+  assert.equal(output.chunksFailed, 0);
 });
 
-test('timeout and truncated output fail visibly', async t => {
+test('timeout and truncated output surface as a raw chunk with chunksFailed', async t => {
   mock(t, async () => { throw Object.assign(new Error('timeout'), { name: 'TimeoutError' }); });
-  await assert.rejects(cleanTranscript('讨论'), /超时/);
+  let output = await cleanTranscript('讨论');
+  assert.equal(output.text, '讨论');
+  assert.equal(output.chunksFailed, 1);
   globalThis.fetch = async () => ({ ok: true, json: async () => ({ done: true, done_reason: 'length', message: { content: '{"deletions":[]}' } }) });
-  await assert.rejects(cleanTranscript('讨论'), /完整输出/);
+  output = await cleanTranscript('讨论');
+  assert.equal(output.text, '讨论');
+  assert.equal(output.chunksFailed, 1);
 });

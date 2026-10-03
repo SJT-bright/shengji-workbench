@@ -19,8 +19,8 @@ function command(executable, args, { signal, timeout = 60_000, env = childEnv } 
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('音频转写已取消'));
     const child = spawn(executable, args, { env, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '', stderr = '', reason = '', settled = false, killTimer;
-    const stop = message => { reason ||= message; child.kill('SIGTERM'); killTimer ||= setTimeout(() => child.kill('SIGKILL'), 2000); };
+    let stdout = '', stderr = '', reason = '', settled = false, killTimer, settleTimer;
+    const stop = message => { reason ||= message; child.kill('SIGTERM'); killTimer ||= setTimeout(() => { child.kill('SIGKILL'); /* 看门狗：不可中断进程连 SIGKILL 也不结算时，强制让队列继续 */ settleTimer ||= setTimeout(() => finish(new Error(reason || '本地转写进程无响应，已强制结束')), 3000); }, 2000); };
     const onAbort = () => stop('音频转写已取消');
     const timer = setTimeout(() => stop('本地音频转写超时，请缩短音频后重试'), timeout);
     signal?.addEventListener('abort', onAbort, { once: true });
@@ -28,11 +28,11 @@ function command(executable, args, { signal, timeout = 60_000, env = childEnv } 
     const finish = (error, value) => {
       if (settled) return; settled = true;
       clearTimeout(timer); clearTimeout(killTimer); signal?.removeEventListener('abort', onAbort);
-      if (error) reject(error); else resolve(value);
+      clearTimeout(settleTimer);if (error) reject(error); else resolve(value);
     };
     child.stdout.on('data', chunk => { stdout = (stdout + chunk.toString()).slice(-262144); });
     child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-32768); });
-    child.on('error', error => finish(new Error(error.code === 'ENOENT' ? `缺少本机转写依赖：${executable}` : '无法启动本地音频转写进程')));
+    child.on('error', error => finish(new Error(error.code === 'ENOENT' ? '缺少本机转写依赖（FunASR Python 环境），请在设置中检查转写环境' : '无法启动本地音频转写进程')));
     child.on('close', code => {
       if (reason) return finish(new Error(reason));
       if (code !== 0) {
@@ -87,7 +87,8 @@ export async function transcribeAudio(file, { signal } = {}) {
     // The helper rejects >7200s; it never reports a truncated long recording as complete.
     await command(ffmpeg, ['-nostdin','-hide_banner','-loglevel','error','-protocol_whitelist','file,pipe','-i',file,'-map','0:a:0','-vn','-ac','1','-ar','16000','-t','7201','-c:a','pcm_s16le','-y',wav], { signal, timeout: 180_000 });
     await command(python, [helper,'--models',models,'--audio',wav,'--output',output], { signal, timeout: Math.max(180_000, Math.min(2_700_000, (Number.isFinite(duration) ? duration : 7200)*1000+120_000)), env: { ...childEnv, TMPDIR: temp } });
-    const result = JSON.parse(await fs.readFile(output,'utf8'));
+    let raw;try{raw=await fs.readFile(output,'utf8')}catch{throw new Error('本地转写结果读取失败，请重试')}
+    const result = JSON.parse(raw);
     if (typeof result.text !== 'string' || !result.text.trim()) throw new Error('未识别到可转写的语音，请检查录音是否清晰或只有静音');
     if (!Number.isFinite(result.duration) || result.duration <= 0 || result.duration > 7200 || result.engine !== engine) throw new Error('本地转写结果格式无效，没有保存不完整结果');
     return { text: result.text.trim(), duration: result.duration, engine, language: 'zh' };

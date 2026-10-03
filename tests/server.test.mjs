@@ -218,7 +218,7 @@ test('pending period reviews cannot write old-library content after restore, but
   const restore={version:2,records:[]};if(!validRestore)restore.digests=null;
   assert.equal((await api('/api/restore',{method:'POST',body:restore})).status,validRestore?200:400);
   response.writeHead(200,{'Content-Type':'application/json'});
-  response.end(JSON.stringify({message:{content:JSON.stringify({text:'旧库原文生成的回顾。'})}}));
+  response.end(JSON.stringify({done:true,done_reason:'stop',message:{content:JSON.stringify({text:'旧库原文生成的回顾。'})}}));
   const result=await pending;
   const state=(await api('/api/state')).body;
   if(validRestore){

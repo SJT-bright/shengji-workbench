@@ -54,6 +54,12 @@ function restrictFile(file) {
   fs.chmodSync(file, 0o600);
 }
 
+function restrictSidecars(prefix) {
+  for (const suffix of ['-wal', '-shm']) {
+    try { fs.chmodSync(`${prefix}${suffix}`, 0o600); } catch { /* sidecar 尚未创建或已被回收 */ }
+  }
+}
+
 function assertSqliteFile(file) {
   const fd = fs.openSync(file, 'r');
   try {
@@ -69,6 +75,37 @@ function assertSqliteFile(file) {
 
 function columnText(value) {
   return typeof value === 'string' ? value : '';
+}
+
+// 写事务期间的 journal 策略：先切到 WAL（提交只追加 -wal，避免回滚日志整页改写），
+// 提交后立刻切回 DELETE —— 该切换会把 WAL checkpoint 回主库文件并删除 -wal/-shm，
+// 保证落盘静止态始终是"主库文件完整、无 sidecar"，与既有语义一致。
+function enableWal(db) {
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA synchronous = NORMAL');
+}
+
+function checkpointToRollback(db) {
+  db.exec('PRAGMA synchronous = FULL');
+  db.exec('PRAGMA journal_mode = DELETE');
+}
+
+function writeTransaction(db, fn, sidecarPrefix) {
+  enableWal(db);
+  db.exec('BEGIN IMMEDIATE');
+  if (sidecarPrefix) restrictSidecars(sidecarPrefix);
+  let committed = false;
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    committed = true;
+    return result;
+  } finally {
+    if (!committed) {
+      try { db.exec('ROLLBACK'); } catch { /* already rolled back */ }
+    }
+    try { checkpointToRollback(db); } catch { /* 下次 openDatabase 会回收遗留的 WAL */ }
+  }
 }
 
 function writeContents(db, state) {
@@ -136,11 +173,21 @@ function assertSchema(db) {
   if (status !== 'ok') throw new Error('SQLite 数据库已损坏（完整性检查失败），已停止打开，未改用空库');
 }
 
+// 崩溃可能留下停留在 WAL 模式且带 -wal/-shm 的库文件：打开时 checkpoint 回主库并
+// 恢复 DELETE 模式，保证只读会话（load/search/stats）不会留下 sidecar 文件。
+function recoverLeftoverWal(db) {
+  try {
+    const row = db.prepare('PRAGMA journal_mode').get();
+    if (String(row?.journal_mode) === 'wal') db.exec('PRAGMA journal_mode = DELETE');
+  } catch { /* 保持原样；下次写事务仍会按需启用 WAL */ }
+}
+
 function openDatabase(file) {
   assertSqliteFile(file);
   const db = new DatabaseSync(file);
   try {
     assertSchema(db);
+    recoverLeftoverWal(db);
     db.fts = Boolean(db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='records_fts'").get());
     return db;
   } catch (error) {
@@ -150,7 +197,7 @@ function openDatabase(file) {
 }
 
 function applySchema(db) {
-  db.exec('PRAGMA journal_mode = DELETE');
+  enableWal(db);
   db.exec(SCHEMA);
   try {
     db.exec(FTS_SCHEMA);
@@ -171,15 +218,21 @@ export function openStore({dataDir, initialState, validate}) {
   const jsonPath = path.join(dataDir, 'library.json');
   let db = null;
   let closed = false;
+  let stmts = null;
+  let persistedRecords = null; // Map<id, {json, position}>：上一次已落盘的 records 影子
   const searchMode = 'LIKE';
 
   function attach(database) {
     db = database;
+    stmts = null;
+    persistedRecords = null;
     restrictFile(sqlitePath);
   }
 
   function createEmptyFile() {
     const partial = `${sqlitePath}.partial`;
+    fs.rmSync(`${partial}-wal`, {force: true});
+    fs.rmSync(`${partial}-shm`, {force: true});
     fs.rmSync(partial, {force: true});
     const created = new DatabaseSync(partial);
     try {
@@ -188,6 +241,8 @@ export function openStore({dataDir, initialState, validate}) {
       return {created, partial};
     } catch (error) {
       try { created.close(); } catch { /* ignore */ }
+      fs.rmSync(`${partial}-wal`, {force: true});
+      fs.rmSync(`${partial}-shm`, {force: true});
       fs.rmSync(partial, {force: true});
       throw error;
     }
@@ -203,13 +258,13 @@ export function openStore({dataDir, initialState, validate}) {
   function commitNew(state) {
     const {created, partial} = createEmptyFile();
     try {
-      created.exec('BEGIN IMMEDIATE');
-      writeContents(created, state);
-      created.exec('COMMIT');
+      // 全量入口（迁移 / 首次落盘）：保留 writeContents 的逐条校验
+      writeTransaction(created, () => writeContents(created, state), partial);
       publishPartial(created, partial);
     } catch (error) {
-      try { created.exec('ROLLBACK'); } catch { /* not begun */ }
       try { created.close(); } catch { /* ignore */ }
+      fs.rmSync(`${partial}-wal`, {force: true});
+      fs.rmSync(`${partial}-shm`, {force: true});
       fs.rmSync(partial, {force: true});
       throw error;
     }
@@ -252,6 +307,133 @@ export function openStore({dataDir, initialState, validate}) {
     return readState(db);
   }
 
+  function getStatements() {
+    if (!stmts) {
+      stmts = {
+        insertRecord: db.prepare(`INSERT INTO records
+          (id, data, title, transcript, cleaned_transcript, summary, date, category, position)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+        updateRecord: db.prepare(`UPDATE records
+          SET data = ?, title = ?, transcript = ?, cleaned_transcript = ?, summary = ?, date = ?, category = ?, position = ?
+          WHERE id = ?`),
+        moveRecord: db.prepare('UPDATE records SET position = ? WHERE id = ?'),
+        deleteRecord: db.prepare('DELETE FROM records WHERE id = ?'),
+        insertCategory: db.prepare('INSERT INTO categories (id, data, position) VALUES (?, ?, ?)'),
+        insertMeta: db.prepare('INSERT INTO metadata (key, value) VALUES (?, ?)'),
+        insertFts: null,
+        deleteFts: null,
+      };
+      if (db.fts) {
+        stmts.insertFts = db.prepare(`INSERT INTO records_fts (rowid, title, transcript, cleaned_transcript, summary)
+          SELECT rowid, title, transcript, cleaned_transcript, summary FROM records WHERE id = ?`);
+        stmts.deleteFts = db.prepare('DELETE FROM records_fts WHERE rowid = (SELECT rowid FROM records WHERE id = ?)');
+      }
+    }
+    return stmts;
+  }
+
+  // 常规 save 的增量计划：与上次落盘影子按 id 比对，产出最小写集。
+  // 结构校验（对象/ id / 重复 id）对所有记录执行——开销 O(N) 纯字符串比较，
+  // 保证与全量写完全一致的报错行为；逐条内容校验由调用方 validate 承担。
+  function planRecordDiff(records) {
+    if (persistedRecords === null) {
+      persistedRecords = new Map();
+      for (const row of db.prepare('SELECT id, data, position FROM records').all()) {
+        persistedRecords.set(row.id, {json: row.data, position: Number(row.position)});
+      }
+    }
+    const seen = new Set();
+    const inserts = [];
+    const updates = [];
+    const moves = [];
+    const nextMap = new Map();
+    records.forEach((record, position) => {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) throw new Error('记录格式无效');
+      if (typeof record.id !== 'string' || !record.id) throw new Error('记录缺少 id');
+      if (seen.has(record.id)) throw new Error(`重复记录 id: ${record.id}`);
+      seen.add(record.id);
+      const json = JSON.stringify(record);
+      nextMap.set(record.id, {json, position});
+      const prev = persistedRecords.get(record.id);
+      if (!prev) {
+        inserts.push([
+          record.id,
+          json,
+          columnText(record.title),
+          columnText(record.transcript),
+          columnText(record.cleanedTranscript),
+          columnText(record.summary),
+          columnText(record.date),
+          columnText(record.category),
+          position,
+        ]);
+      } else if (prev.json !== json) {
+        updates.push({
+          id: record.id,
+          params: [
+            json,
+            columnText(record.title),
+            columnText(record.transcript),
+            columnText(record.cleanedTranscript),
+            columnText(record.summary),
+            columnText(record.date),
+            columnText(record.category),
+            position,
+            record.id,
+          ],
+        });
+      } else if (prev.position !== position) {
+        moves.push([position, record.id]);
+      }
+    });
+    const deleteIds = [];
+    for (const id of persistedRecords.keys()) {
+      if (!seen.has(id)) deleteIds.push(id);
+    }
+    return {inserts, updates, moves, deleteIds, nextMap};
+  }
+
+  function applyRecordDiff(plan) {
+    const s = getStatements();
+    for (const id of plan.deleteIds) {
+      if (s.deleteFts) s.deleteFts.run(id); // 先删 FTS 行（需要 records 里仍能查到 rowid）
+      s.deleteRecord.run(id);
+    }
+    for (const params of plan.inserts) {
+      s.insertRecord.run(...params);
+      if (s.insertFts) s.insertFts.run(params[0]);
+    }
+    for (const update of plan.updates) {
+      s.updateRecord.run(...update.params);
+      if (s.insertFts) {
+        s.deleteFts.run(update.id);
+        s.insertFts.run(update.id);
+      }
+    }
+    for (const [position, id] of plan.moves) {
+      s.moveRecord.run(position, id);
+    }
+  }
+
+  function rewriteCategories(categories) {
+    const list = Array.isArray(categories) ? categories : [];
+    const s = getStatements();
+    db.exec('DELETE FROM categories');
+    list.forEach((category, position) => {
+      if (!category || typeof category.id !== 'string' || !category.id) throw new Error('分类缺少 id');
+      s.insertCategory.run(category.id, JSON.stringify(category), position);
+    });
+  }
+
+  function rewriteMetadata(state) {
+    const s = getStatements();
+    db.exec('DELETE FROM metadata');
+    for (const [key, value] of Object.entries(state)) {
+      if (RESERVED_KEYS.has(key)) continue;
+      s.insertMeta.run(key, JSON.stringify(value));
+    }
+  }
+
   function save(state) {
     if (closed) throw new Error('存储已关闭');
     validate(state);
@@ -260,14 +442,20 @@ export function openStore({dataDir, initialState, validate}) {
       commitNew(state);
       return;
     }
-    db.exec('BEGIN IMMEDIATE');
+    if (!state || typeof state !== 'object' || Array.isArray(state)) throw new Error('状态格式无效');
+    if (!Array.isArray(state.records)) throw new Error('records 必须是数组');
+    const plan = planRecordDiff(state.records);
     try {
-      writeContents(db, state);
-      db.exec('COMMIT');
+      writeTransaction(db, () => {
+        applyRecordDiff(plan);
+        rewriteCategories(state.categories);
+        rewriteMetadata(state);
+      }, sqlitePath);
     } catch (error) {
-      try { db.exec('ROLLBACK'); } catch { /* already rolled back */ }
+      persistedRecords = null; // 事务结果未知，下次保存前重建影子
       throw error;
     }
+    persistedRecords = plan.nextMap;
   }
 
   function stats() {
@@ -314,7 +502,10 @@ export function openStore({dataDir, initialState, validate}) {
     if (closed) return;
     closed = true;
     if (!db) return;
-    try { db.close(); } finally { db = null; }
+    try {
+      try { checkpointToRollback(db); } catch { /* 已是静止态或库不可写 */ }
+      db.close();
+    } finally { db = null; }
   }
 
   return {load, save, stats, search, close};

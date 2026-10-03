@@ -83,5 +83,12 @@ export async function answerFromRecords(question,records,{model='qwen2.5:7b',sig
  if(!Array.isArray(value.items)||value.items.length>6)throw new Error('检索摘要格式无效');
  const items=value.items.filter(x=>x&&typeof x.text==='string'&&x.text.trim()&&x.text.length<=700&&typeof x.quote==='string'&&x.quote.trim()&&x.quote.length<=700&&context.some(r=>r.id===x.recordId&&r.segments.some(segment=>segment.transcript.includes(x.quote))));
  if(value.items.length&&!items.length)throw new Error('本次回答没有通过原文引文校验，请换个关键词重试');
- return {items,model,generatedAt:new Date().toISOString(),message:items.length?'基于本次纳入的原文生成；请点击来源核对。':'已检索到记录，但本次纳入的原文没有足够信息回答这个问题。',sources:context.map(({segments,...record})=>({...record,ranges:segments.map(({start,end})=>({start,end})),rangeUnit:'utf16',rangeEnd:'exclusive'}))};
+ // 模型偶发把同一句话填进多条结果或单条结果内重复：展示层折叠，quote 校验仍按原文逐字进行
+ for(const item of items){
+  const seenSentences=new Set();
+  item.text=String(item.text).split(/(?<=[。！？!?.\n])/).filter(part=>{const key=part.trim();if(!key)return true;if(seenSentences.has(key))return false;seenSentences.add(key);return true}).join('');
+ }
+ const seenItems=new Set();
+ const deduped=items.filter(item=>{const key=JSON.stringify([item.recordId,item.text]);if(!item.text.trim()||seenItems.has(key))return false;seenItems.add(key);return true});
+ return {items:deduped,model,generatedAt:new Date().toISOString(),message:items.length?'基于本次纳入的原文生成；请点击来源核对。':'已检索到记录，但本次纳入的原文没有足够信息回答这个问题。',sources:context.map(({segments,...record})=>({...record,ranges:segments.map(({start,end})=>({start,end})),rangeUnit:'utf16',rangeEnd:'exclusive'}))};
 }
