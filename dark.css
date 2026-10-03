@@ -1,0 +1,198 @@
+/* 深色主题：由 data-theme="dark" 属性驱动（html 元素）。
+   属性由 main.js 依据「跟随系统 / 浅色 / 深色」三态偏好设置；放在所有主题层之后加载，
+   仅覆盖颜色类属性，结构与动效复用浅色层。color-scheme:dark 让原生控件一并转暗。 */
+:root[data-theme="dark"] {--ink:#eae5f6;--muted:#a89fc2;--bg:#131019;--surface:#1d1928;--line:#3a3352;--glass:linear-gradient(140deg,#252035f5,#1d1930ec);--control:linear-gradient(155deg,#2d2740,#252035);--shadow:0 10px 28px #08060ecc,inset 0 1px 0 #ffffff10;--ink-label:#ece8f8;--ink-aux:#b0a7c9;--tile-hi:inset 1px 2px 4px #ffffff12;--tile-drop:0 5px 12px #06041173;color-scheme:dark}
+[data-theme="dark"] ::selection {background:#4a3c72;color:#f0ecfa}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {background:#463d5e;border-radius:8px;border:2.5px solid transparent;background-clip:content-box}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {background:#5c5180;background-clip:content-box;border:2.5px solid transparent}
+[data-theme="dark"] .category-nav, [data-theme="dark"] .chips {scrollbar-color:#463d5e transparent}
+/* 背景与光晕：保留模糊声波底图，压上深色罩 */
+[data-theme="dark"] body {background:#131019;color:var(--ink)}
+[data-theme="dark"] body:before {background:linear-gradient(rgba(13,10,20,.86),rgba(11,8,17,.93)),url('/images/soft-audio.png') center/cover}
+/* 侧栏 */
+[data-theme="dark"] .sidebar {background:linear-gradient(145deg,#211c30ee,#1a1626f0);border-color:#ffffff10;box-shadow:8px 12px 30px #05030a4d}
+[data-theme="dark"] .brand-name {color:#f0ecfa}
+[data-theme="dark"] .brand-name span {color:#9d84f0}
+[data-theme="dark"] .brand-sub, [data-theme="dark"] .nav-label {color:#9c93b6}
+[data-theme="dark"] .nav-item {color:#d6d0e8}
+[data-theme="dark"] .nav-item:hover {background:#ffffff0a;box-shadow:none}
+[data-theme="dark"] .nav-item.active, [data-theme="dark"] .nav-item.active:hover {background:linear-gradient(115deg,#39305c,#2b2444);color:#d9cdf8;border-color:#4a3f70;box-shadow:inset 0 1px 0 #ffffff12,0 3px 10px #06041140}
+[data-theme="dark"] .nav-item.active>span {color:#d9cdf8}
+[data-theme="dark"] .count {background:#ffffff0d;color:#c9c2dc;border-color:#ffffff14}
+[data-theme="dark"] .nav-item.active .count {background:#ffffff14;color:#efe9fb}
+[data-theme="dark"] .category-heading .icon-btn {color:#c4bbdd}
+[data-theme="dark"] .category-manage {background:#ffffff0a;border-color:#ffffff12;color:#c4bbdd;box-shadow:none}
+[data-theme="dark"] .storage-card {background:#ffffff07;color:#b0a7c9;border-color:#ffffff10}
+[data-theme="dark"] .storage-card strong {color:#d6d0e8}
+[data-theme="dark"] .local-indicator {color:#a89fc2}
+[data-theme="dark"] .empty-state>svg, [data-theme="dark"] .storage-card svg {background:linear-gradient(155deg,#352e4c 0%,#2b2440 58%,#282238 100%);box-shadow:var(--tile-hi),var(--tile-drop)}
+/* 顶栏 */
+[data-theme="dark"] .topbar {background:#1a1626a6;border-color:#ffffff0d}
+[data-theme="dark"] .breadcrumbs {color:#b3aac9}
+[data-theme="dark"] .breadcrumbs strong {color:#e6e1f4}
+[data-theme="dark"] .top-actions {color:#b3aac9}
+[data-theme="dark"] .avatar {background:linear-gradient(#2d2740,#251f36);color:#c4bbdd;border-color:#ffffff10}
+/* 玻璃卡片描边转暗（背景走 var(--glass) 自动适配） */
+[data-theme="dark"] .stat-card, [data-theme="dark"] .panel, [data-theme="dark"] .record-card, [data-theme="dark"] .knowledge-card, [data-theme="dark"] .empty-state, [data-theme="dark"] .insight-card, [data-theme="dark"] .digest-card, [data-theme="dark"] .review-reminder, [data-theme="dark"] .gem-flash, [data-theme="dark"] .heatmap-card {border-color:#ffffff12}
+[data-theme="dark"] .insight-card {background:linear-gradient(145deg,#2a2233e8,#221c33d9)}
+[data-theme="dark"] .insight-card blockquote {color:#d9d0ec}
+[data-theme="dark"] .insight-card>p, [data-theme="dark"] .insight-icon {color:#a89fc2}
+[data-theme="dark"] .insight-line {background:var(--line)}
+/* 文字层级 */
+[data-theme="dark"] .page-heading h1 {text-shadow:none;color:#f0ecfa}
+[data-theme="dark"] .page-heading p, [data-theme="dark"] .hero p, [data-theme="dark"] .record-excerpt, [data-theme="dark"] .modal-head p, [data-theme="dark"] .empty-state p, [data-theme="dark"] .record-meta, [data-theme="dark"] .detail-meta, [data-theme="dark"] .stat-note, [data-theme="dark"] .stat-label, [data-theme="dark"] .form-note, [data-theme="dark"] .field small, [data-theme="dark"] .detail-section p, [data-theme="dark"] .detail-section li, [data-theme="dark"] .settings-note, [data-theme="dark"] .setting-switch small, [data-theme="dark"] .calendar-caption, [data-theme="dark"] .review-progress>p, [data-theme="dark"] .review-number span, [data-theme="dark"] .eyebrow, [data-theme="dark"] .hero-kicker, [data-theme="dark"] .top-date, [data-theme="dark"] .section-head h2>span, [data-theme="dark"] .section-head h2 small, [data-theme="dark"] .page-footer, [data-theme="dark"] .digest-hint, [data-theme="dark"] .review-count, [data-theme="dark"] .action-copy small, [data-theme="dark"] .gem-tag-label, [data-theme="dark"] .heat-head span, [data-theme="dark"] .palette-section, [data-theme="dark"] .breadcrumbs, [data-theme="dark"] .day-digest-hint {color:#a89fc2}
+[data-theme="dark"] .record-title, [data-theme="dark"] .modal-head h2, [data-theme="dark"] .section-head h2, [data-theme="dark"] .hero h2, [data-theme="dark"] .stat-value, [data-theme="dark"] .review-number strong, [data-theme="dark"] .knowledge-card h3, [data-theme="dark"] .empty-state h3, [data-theme="dark"] .calendar-head, [data-theme="dark"] .timeline-group h2, [data-theme="dark"] .gem-flash-title, [data-theme="dark"] .heat-head h2, [data-theme="dark"] .digest-text, [data-theme="dark"] .automation-copy strong, [data-theme="dark"] .detail-section h3, [data-theme="dark"] .panel h2, [data-theme="dark"] .panel h3, [data-theme="dark"] .connections-grid h2, [data-theme="dark"] .ask-panel h2, [data-theme="dark"] .pipeline-panel h2, [data-theme="dark"] .queue-job strong, [data-theme="dark"] .action-text, [data-theme="dark"] .review-reminder-text, [data-theme="dark"] .dc-sync-counts {color:#ece8f8}
+[data-theme="dark"] .knowledge-card p, [data-theme="dark"] .knowledge-card li {color:#b3aac9}
+/* 按钮体系 */
+[data-theme="dark"] .btn, [data-theme="dark"] .icon-btn, [data-theme="dark"] .text-btn, [data-theme="dark"] .chip, [data-theme="dark"] .detail-tabs button, [data-theme="dark"] .import-tabs button, [data-theme="dark"] .demo-banner button, [data-theme="dark"] .value-chip, [data-theme="dark"] .gem-tag-chip {color:#e2dcf0;background:linear-gradient(165deg,#2d2740 0%,#251f36 100%);border-color:#ffffff14;box-shadow:inset 1px 1px 0 #ffffff10,0 3px 8px #06041159}
+[data-theme="dark"] .btn:hover, [data-theme="dark"] .icon-btn:hover, [data-theme="dark"] .text-btn:hover, [data-theme="dark"] .chip:hover, [data-theme="dark"] .value-chip:hover, [data-theme="dark"] .gem-tag-chip:hover {background:linear-gradient(165deg,#352e4c,#2b2440);border-color:#4a3f70}
+[data-theme="dark"] .btn-primary, [data-theme="dark"] .hero .btn-primary, [data-theme="dark"] .hero .btn-primary:hover {background:linear-gradient(165deg,#8a6bc0 0%,#6d53a0 100%);border-color:#ffffff2e;color:#fff}
+[data-theme="dark"] .chip.active, [data-theme="dark"] .detail-tabs button.active, [data-theme="dark"] .import-tabs button.active, [data-theme="dark"] .value-chip.active, [data-theme="dark"] .gem-tag-chip.active {color:#e6dcfa;background:linear-gradient(165deg,#3b3158,#312a49);border-color:#57498a;box-shadow:inset 1px 1px 0 #ffffff12,0 3px 8px #06041140}
+[data-theme="dark"] .icon-btn.is-favorite, [data-theme="dark"] .icon-btn.active {color:#f0c26a;background:linear-gradient(165deg,#42351a,#382c15);border-color:#6b5424}
+[data-theme="dark"] .btn-danger, [data-theme="dark"] .icon-btn.danger {color:#f1998f;background:linear-gradient(165deg,#46241f,#3a1d19);border-color:#6e3a34}
+[data-theme="dark"] .export-btn {color:#a89fc2;background:linear-gradient(165deg,#2d2740,#251f36);border-color:#ffffff14}
+[data-theme="dark"] .export-btn:hover {color:#e2dcf0;border-color:#4a3f70}
+/* 搜索与表单 */
+[data-theme="dark"] .search-box {background:#221d31f0;border-color:#ffffff10;color:#a89fc2;box-shadow:inset 0 2px 4px #06041140}
+[data-theme="dark"] .search-box input {color:#ece8f8}
+[data-theme="dark"] .search-box input::placeholder, [data-theme="dark"] .field input::placeholder, [data-theme="dark"] .field textarea::placeholder {color:#8b81a6}
+[data-theme="dark"] .search-box:focus-within {outline-color:#8a6bc0}
+[data-theme="dark"] kbd {background:linear-gradient(180deg,#332c47,#282238);border-color:#4a3f70;box-shadow:0 1.5px 0 #1a1626;color:#cfc7e4}
+[data-theme="dark"] .field input, [data-theme="dark"] .field textarea, [data-theme="dark"] .detail-section textarea, [data-theme="dark"] .category-edit-row input:not([type=color]) {background:#241f33;border-color:#453d63;color:#e6e1f4;box-shadow:inset 0 2px 3px #0604112e}
+/* 下拉框用 background-color，避免简写重置基础层的箭头 background-repeat */
+[data-theme="dark"] .field select, [data-theme="dark"] .category-edit-row select {background-color:#241f33;border-color:#453d63;color:#e6e1f4;box-shadow:inset 0 2px 3px #0604112e}
+[data-theme="dark"] .field select, [data-theme="dark"] .category-edit-row select {background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23a89fc2' stroke-width='2'/%3E%3C/svg%3E")}
+[data-theme="dark"] .category-edit-row input[type=color] {background:#241f33;border-color:#453d63}
+[data-theme="dark"] .field label, [data-theme="dark"] .check-label {color:#d6d0e8}
+[data-theme="dark"] .field label span {color:#a89fc2}
+[data-theme="dark"] .check-label input, [data-theme="dark"] .setting-switch input {accent-color:#a78fe0}
+[data-theme="dark"] .category-edit-row .icon-btn.danger {background:linear-gradient(165deg,#46241f,#3a1d19);border-color:#6e3a34;color:#f1998f}
+/* 弹窗体系 */
+[data-theme="dark"] .modal {background:linear-gradient(135deg,#211c30fa,#1b1727fb);box-shadow:0 30px 100px #050310d9,inset 0 1px 0 #ffffff0a;border-color:#ffffff10;color:#e6e1f4}
+[data-theme="dark"] .modal::backdrop, [data-theme="dark"] .palette::backdrop {background:#0a0714b3}
+[data-theme="dark"] .modal-head {background:linear-gradient(180deg,#211c30f8 70%,#211c30d0);border-color:#ffffff0d}
+[data-theme="dark"] .modal-footer {background:linear-gradient(0deg,#1d1928,#1d1928e5);border-color:#ffffff0d}
+[data-theme="dark"] .transcript {background:#1d1928f0;color:#d6d0e8;border-color:#453d63}
+[data-theme="dark"] .ai-result {background:#2b2440;border-color:#453d63}
+[data-theme="dark"] .ai-result p, [data-theme="dark"] .ai-result small {color:#b3aac9}
+[data-theme="dark"] .ai-result.failed {background:#3d221e;border-color:#6e3a34}
+[data-theme="dark"] .model-status {background:#3d3218;color:#e8c377}
+[data-theme="dark"] .model-status.ready {background:#1d3226;color:#8fd4ae}
+[data-theme="dark"] .cleaned-block {background:#1d1928;border-color:#3a3352}
+[data-theme="dark"] .answer-item blockquote {background:#2b2440;border-color:#453d63;border-left-color:#8a6bc0}
+[data-theme="dark"] .audio-panel {background:linear-gradient(#262038,#1f1a2e);border-color:#453d63}
+[data-theme="dark"] .audio-player {border-color:#453d63;background:linear-gradient(145deg,#282239,#221d31);box-shadow:inset 1px 1px 0 #ffffff0a,0 3px 9px #06041140}
+[data-theme="dark"] .audio-time {color:#a89fc2}
+[data-theme="dark"] .audio-error, [data-theme="dark"] #category-error {color:#f1998f}
+[data-theme="dark"] .shortcut-row {border-color:#3a3352}
+[data-theme="dark"] .shortcut-desc {color:#b3aac9}
+/* 徽标与标签 */
+[data-theme="dark"] .tag {color:#e6e1f4!important;background:#ffffff10!important;border-color:#ffffff14}
+[data-theme="dark"] .status-tag, [data-theme="dark"] .snippet-tag {color:#c9c2dc;background:#ffffff0a;border-color:#ffffff14}
+[data-theme="dark"] .status-tag.done {color:#9fd8bd;background:#173226;border-color:#2b5443}
+[data-theme="dark"] .ai-badge, [data-theme="dark"] .transcription-badge {color:#c9c2dc;background:#ffffff0a;border-color:#ffffff14}
+[data-theme="dark"] .ai-badge.running, [data-theme="dark"] .transcription-badge.running {color:#e8c377;background:#3d3218}
+[data-theme="dark"] .ai-badge.failed, [data-theme="dark"] .transcription-badge.failed {color:#f1998f;background:#3d221e}
+[data-theme="dark"] .ai-badge.done, [data-theme="dark"] .transcription-badge.done {color:#9fd8bd;background:#173226}
+[data-theme="dark"] .gem-tag, [data-theme="dark"] .gem-mini-tag {color:#e8c377;background:#3a2f16;border-color:#6b5424}
+[data-theme="dark"] .record-card.gem {border-left-color:#d8b45f}
+[data-theme="dark"] .review-reminder {border-left-color:#d8b45f}
+/* 日历与热力 */
+[data-theme="dark"] .calendar-days>button {background:linear-gradient(165deg,#2d2740,#251f36);border-color:#ffffff10;box-shadow:inset 1px 1px 0 #ffffff0a,0 2px 5px #06041126;color:#d6d0e8}
+[data-theme="dark"] .calendar-days>button.today, [data-theme="dark"] .calendar-days>button.selected {background:linear-gradient(165deg,#8a6bc0,#6d53a0);border-color:#ffffff2e;color:#fff}
+[data-theme="dark"] .calendar-days>button.has-record:after {background:#a78fe0}
+[data-theme="dark"] .calendar-days>button.selected:after {background:#fff}
+[data-theme="dark"] .calendar-caption i {background:#a78fe0}
+[data-theme="dark"] .weekdays {color:#a89fc2}
+[data-theme="dark"] .heat-cell {color:#cfc7e4}
+[data-theme="dark"] .h0 {background:#262038}
+[data-theme="dark"] .h1 {background:#3d3064}
+[data-theme="dark"] .h2 {background:#5a4690}
+[data-theme="dark"] .h3 {background:#8465ae;color:#fff}
+[data-theme="dark"] .progress-track {background:#ffffff10}
+/* 时间线粘性头与提炼卡 */
+[data-theme="dark"] .timeline-group h2 {background:linear-gradient(140deg,#241f33f5,#1d1928f0);border-color:#ffffff10}
+[data-theme="dark"] .day-digest {background:#2b2440;border-color:#453d63;color:#d6d0e8}
+/* 首页 hero 与自动化横幅 */
+[data-theme="dark"] .hero:before {background:linear-gradient(100deg,#1c1727f0 0%,#191426e8 48%,#191426a8 100%)}
+[data-theme="dark"] .automation-strip {background:linear-gradient(110deg,#241f33f0,#1e1930e8);border-color:#ffffff10}
+[data-theme="dark"] .demo-banner {background:#3d3218f0;color:#e8c377;border-color:#6b5424}
+[data-theme="dark"] .demo-banner button {background:#282238;border-color:#6b5424;color:#e8c377}
+[data-theme="dark"] .connection-error {background:#3d221ef0;color:#f1998f;border-color:#6e3a34}
+/* 导入 / 设置 */
+[data-theme="dark"] .dropzone {background:linear-gradient(145deg,#2d2740,#251f36);border-color:#57498a;color:#c4bbdd;box-shadow:inset 1px 1px 1px #ffffff0a,0 5px 17px #0604110d}
+[data-theme="dark"] .dropzone:hover, [data-theme="dark"] .dropzone.dragover {background:#332b4d;border-color:#7b64b8}
+[data-theme="dark"] .dropzone span, [data-theme="dark"] .dropzone p {color:#a89fc2}
+[data-theme="dark"] .import-queue-row {background:#241f33;border-color:#453d63}
+[data-theme="dark"] .import-queue-row small {color:#a89fc2}
+[data-theme="dark"] .import-queue-row.done {background:#1d3226;border-color:#2b5443}
+[data-theme="dark"] .import-queue-row.failed {background:#3d221e;border-color:#6e3a34}
+[data-theme="dark"] .import-queue-row.running {border-color:#8a6bc0}
+[data-theme="dark"] .automation-flow {background:#2b2440;color:#d6d0e8}
+[data-theme="dark"] .settings-note {color:#b3aac9;border-color:#ffffff0d}
+/* 快速查找面板 */
+[data-theme="dark"] .palette {background:linear-gradient(145deg,#211c30fa,#1b1727f5);box-shadow:0 25px 85px #050310cc;border-color:#ffffff10;color:#e6e1f4}
+[data-theme="dark"] .palette-head {border-color:#ffffff10}
+[data-theme="dark"] .palette-head input {color:#ece8f8}
+[data-theme="dark"] .palette-head input::placeholder {color:#8b81a6}
+[data-theme="dark"] .palette-head svg, [data-theme="dark"] .palette-row svg {color:#a78fe0}
+[data-theme="dark"] .palette-row {color:#d6d0e8}
+[data-theme="dark"] .palette-row:hover, [data-theme="dark"] .palette-row:focus-visible {background:#ffffff0d}
+[data-theme="dark"] .palette-row.active {background:#352c52}
+[data-theme="dark"] .palette-row.active small {color:#b3aac9}
+[data-theme="dark"] .palette-row small {color:#8b81a6}
+[data-theme="dark"] .palette-empty {color:#8b81a6}
+[data-theme="dark"] .palette-empty svg {color:#6e5fa0}
+[data-theme="dark"] .palette-foot {border-color:#ffffff10;background:#1d1928b3;color:#8b81a6}
+/* 其他 */
+[data-theme="dark"] .global-drop {background:#1d1928f2;border-color:#7b64b8;color:#d9cdf8}
+[data-theme="dark"] .boot-state {color:#cfc7e4}
+[data-theme="dark"] .boot-state h1 {color:#a78fe0}
+[data-theme="dark"] .empty-wave i {background:linear-gradient(180deg,#8a76c8,#5e4b9e)}
+/* 设备连接（dc- 前缀组件的暗色变量与卡片） */
+[data-theme="dark"] .device-connections {--dc-ink:#e6e1f4;--dc-ink-aux:#a89fc2}
+[data-theme="dark"] .dc-explainer, [data-theme="dark"] .dc-add-form {background:#ffffff08;border-color:#ffffff12;box-shadow:0 5px 12px #06041140}
+[data-theme="dark"] .dc-add-form {background:#241f33d9}
+[data-theme="dark"] .dc-card {background:#241f33bf;border-color:#ffffff12;box-shadow:0 5px 12px #06041140}
+[data-theme="dark"] .dc-kind-badge--simulator {color:#e8c377;background:#3a2f16;border-color:#6b5424}
+[data-theme="dark"] .dc-kind-badge--remote {color:#8fd0dc;background:#153035;border-color:#2b545e}
+[data-theme="dark"] .dc-kind-badge--other {color:#c9c2dc;background:#ffffff0a;border-color:#ffffff14}
+[data-theme="dark"] .dc-status--configured, [data-theme="dark"] .dc-status--unknown {color:#c9c2dc;background:#ffffff0a;border-color:#ffffff14}
+[data-theme="dark"] .dc-status--reachable {color:#9fd8bd;background:#173226;border-color:#2b5443}
+[data-theme="dark"] .dc-status--unsupported {color:#e8c377;background:#3d3218;border-color:#6b5424}
+[data-theme="dark"] .dc-status--error {color:#f1998f;background:#3d221e;border-color:#6e3a34}
+[data-theme="dark"] .dc-btn {color:#e2dcf0;background:linear-gradient(165deg,#2d2740,#251f36);border-color:#ffffff14;box-shadow:inset 1px 1px 0 #ffffff10,0 3px 8px #06041140}
+[data-theme="dark"] .dc-btn:hover {border-color:#4a3f70;background:linear-gradient(165deg,#352e4c,#2b2440)}
+[data-theme="dark"] .dc-btn-primary {color:#fff!important;background:linear-gradient(165deg,#8a6bc0,#6d53a0)!important;border-color:#ffffff2e!important}
+[data-theme="dark"] .dc-btn-ghost {background:#ffffff0a!important}
+[data-theme="dark"] .dc-btn-danger {color:#f1998f!important;background:linear-gradient(165deg,#46241f,#3a1d19)!important;border-color:#6e3a34!important}
+[data-theme="dark"] .dc-hint {background:#2b2440;border-color:#453d63;color:#c4bbdd}
+[data-theme="dark"] .dc-error, [data-theme="dark"] .dc-banner-error, [data-theme="dark"] .dc-form-error {background:#3d221e;border-color:#6e3a34;color:#f1998f}
+[data-theme="dark"] .dc-banner-error {color:#f1998f}
+[data-theme="dark"] .dc-result {background:#221d31;border-color:#453d63}
+[data-theme="dark"] .dc-result--error {background:#331b18;border-color:#6e3a34}
+[data-theme="dark"] .dc-kind-option {color:#e2dcf0;background:linear-gradient(165deg,#2d2740,#251f36);border-color:#ffffff14;box-shadow:inset 1px 1px 0 #ffffff10,0 3px 8px #06041140}
+[data-theme="dark"] .dc-kind-option.active {color:#e6dcfa;background:linear-gradient(165deg,#3b3158,#312a49);border-color:#57498a}
+[data-theme="dark"] .dc-field input {background:#1d1928;border-color:#453d63;color:#e6e1f4}
+[data-theme="dark"] .dc-field small {color:#8b81a6}
+[data-theme="dark"] .dc-field code {background:#ffffff0a;color:#c4bbdd}
+[data-theme="dark"] .dc-empty {border-color:#3a3352;background:#ffffff05}
+[data-theme="dark"] .dc-loading {color:#a89fc2}
+[data-theme="dark"] .dc-file--imported .dc-file-status {color:#9fd8bd;background:#173226}
+[data-theme="dark"] .dc-file--duplicate .dc-file-status {color:#c9c2dc;background:#ffffff0a}
+[data-theme="dark"] .dc-file--failed .dc-file-status {color:#f1998f;background:#3d221e}
+[data-theme="dark"] .dc-file-error {color:#f1998f}
+[data-theme="dark"] .dc-url {color:#c4bbdd}
+/* 播放速度切换键（暗色） */
+[data-theme="dark"] .audio-speed {color:#a89fc2;border-color:#ffffff14;background:linear-gradient(165deg,#2d2740,#251f36);box-shadow:inset 1px 1px 0 #ffffff10,0 2px 5px #06041126}
+[data-theme="dark"] .audio-speed:hover {color:#e2dcf0;border-color:#4a3f70}
+/* 搜索命中高亮与统计卡（暗色） */
+[data-theme="dark"] mark {background:#5a4a22;color:#ffe9a8}
+[data-theme="dark"] button.stat-card:hover {border-color:#4a3f70;box-shadow:0 14px 25px #06041159}
+/* 文档根滚动条：后代选择器匹配不到 html 自身，需无空格的根变体 */
+:root[data-theme="dark"]::-webkit-scrollbar-thumb{background:#463d5e;border-radius:8px;border:2.5px solid transparent;background-clip:content-box}
+:root[data-theme="dark"]::-webkit-scrollbar-thumb:hover{background:#5c5180;background-clip:content-box;border:2.5px solid transparent}
+/* 回顾档案（暗色） */
+[data-theme="dark"] .recap-item summary{color:#ece8f8}
+[data-theme="dark"] .recap-item summary:hover{background:#ffffff0a}
+[data-theme="dark"] .recap-item[open] summary{border-color:#ffffff10}

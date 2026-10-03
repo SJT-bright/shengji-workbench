@@ -115,6 +115,7 @@
 
 /* ---------- 响应式 ---------- */
 @media (max-width:760px){
+  .device-connections .dc-btn{min-height:42px}
   .dc-head{flex-direction:column;align-items:stretch}
   .dc-head .dc-btn{align-self:flex-start}
   .dc-kind-intro-row{grid-template-columns:1fr}

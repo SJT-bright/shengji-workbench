@@ -575,7 +575,7 @@ select:focus-visible,
 .optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:nth-child(6){animation-delay:.2s}
 .optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:nth-child(n+7){animation-delay:.24s}
 /* fill both would pin transform:none above :hover/:active after the entrance (animation beats normal cascade); interactive children release the forwards fill. */
-.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:is(.record-card,.knowledge-card,.chip,.panel){animation-fill-mode:backwards}
+.optical-reveal :is(.record-list,.knowledge-grid,.connections-grid,.queue-records,.chips,.stats-grid)>:is(.record-card,.knowledge-card,.chip,.panel,.stat-card){animation-fill-mode:backwards}
 @keyframes backdropIn{from{opacity:0}to{opacity:1}}
 .modal::backdrop{background:#241f3a59;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:backdropIn .3s ease-out both}
 .search-box{position:relative}

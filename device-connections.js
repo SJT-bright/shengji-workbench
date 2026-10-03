@@ -209,6 +209,7 @@ export function createDeviceConnections({api,toast}){
       }
       formOpen=false;formError='';
       draft.name='';draft.manifestUrl='';draft.bearerToken='';lastFocusedField='';
+      formBusy=false;
       await refresh();
       notify(`已添加来源「${body.name}」，先「测试连接」再同步`);
     }catch(e){

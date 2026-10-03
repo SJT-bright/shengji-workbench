@@ -171,11 +171,11 @@ test('delete is optimistic, cancellable within delay and final after timeout',as
  expect(errors).toEqual([]);
 });
 test('date filter chip, relative date label and reduced motion',async({page})=>{
- const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');await expect(page.locator('.record-card')).toHaveCount(1);
- // 与被测应用同款规则动态计算 2026-09-26 的相对标签，不硬编码
- const now=new Date(),pad=n=>String(n).padStart(2,'0'),todayStr=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
- const diff=Math.round((new Date(todayStr+'T00:00:00')-new Date('2026-09-26T00:00:00'))/864e5);
- const expected=diff===0?'今天':diff===1?'昨天':diff>1&&diff<=7?`${diff} 天前`:'9月26日';
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ // 冻结在 fixture 当天：日历渲染 2026 年 9 月、相对标签恒为「今天」，不随运行日期漂移
+ await page.clock.setFixedTime(new Date('2026-09-26T12:00:00'));
+ await page.goto('/');await expect(page.locator('.record-card')).toHaveCount(1);
+ const expected='今天';
  // 日历在工作台首页右栏：点 fixture 日期 → 出现带日期的清除 chip → 点 chip 消失
  await page.locator('.calendar-days [data-date="2026-09-26"]').click();const chip=page.locator('[data-clear-date]');await expect(chip).toBeVisible();await expect(chip).toContainText('2026-09-26');
  await chip.click();await expect(page.locator('[data-clear-date]')).toHaveCount(0);
@@ -392,7 +392,9 @@ test('compound section lists only gems and re-review bumps counters',async({page
 });
 test('monthly digest falls back per week chunks and all three cards export markdown',async({page,request})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- const pad=n=>String(n).padStart(2,'0'),now=new Date(),todayStr=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+ // 冻结在 fixture 当天（2026-09-26）：页面「本月」与测试基准同月，不随运行日期漂移
+ const pad=n=>String(n).padStart(2,'0'),now=new Date('2026-09-26T12:00:00');await page.clock.setFixedTime(now);
+ const todayStr=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
  const monthISO=todayStr.slice(0,7),monthLabel=`${now.getMonth()+1}月`,dayLabel=`${now.getMonth()+1}月${now.getDate()}日`;
  const lastDay=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
  // 与应用同款规则动态计算本周一→周日，以及本月包含 26 日的周切块（fixture 固定在 2026-09-26）
@@ -433,7 +435,8 @@ test('monthly digest falls back per week chunks and all three cards export markd
  expect(text.startsWith(`# 本月提炼 ${monthLabel}\n\n`),'monthly export head').toBeTruthy();
  expect(text).toContain(`${monthLabel} · 共 1 段记录`);
  // 今日卡：先补一条今天、带摘要的记录（降级行格式为「- 标题 — 摘要」）→ 提炼今天 → 导出。之前用例可能已生成今日提炼，按钮文案两种都接受
- expect((await request.post('/api/restore',{headers,data:{version:2,records:[fixture,{...fixture,id:'fixture-today2',title:'今天的收尾',date:todayStr,time:'21:00',transcript:'今天完成了月度验证的收尾。',summary:'月度验证收尾完成'}]}})).ok()).toBeTruthy();
+ // 时钟冻结后今天与 fixture 同日：今日库只放「今天」的记录，计数才是 1
+ expect((await request.post('/api/restore',{headers,data:{version:2,records:[{...fixture,id:'fixture-today2',title:'今天的收尾',date:todayStr,time:'21:00',transcript:'今天完成了月度验证的收尾。',summary:'月度验证收尾完成'}]}})).ok()).toBeTruthy();
  await page.reload();
  const todayCard=page.locator('.digest-card:not(.weekly-card):not(.monthly-card):not(.yearly-card)');
  const todayBtn=todayCard.locator('button.btn-secondary');
@@ -447,14 +450,15 @@ test('monthly digest falls back per week chunks and all three cards export markd
  expect(download.suggestedFilename()).toBe(`声迹今日提炼-${dayLabel}.md`);
  text=fs.readFileSync(await download.path(),'utf8');
  expect(text.startsWith(`# 今日提炼 ${dayLabel}\n\n`),'daily export head').toBeTruthy();
- // 本周卡：先「提炼本周」（此前用例可能已生成周报），记录数按本周实际条数动态计算
+ // 本周卡：先「提炼本周」（此前用例可能已生成周报），记录数按本周实际条数动态计算（此刻库中只有今天的记录）
+ const inWeekNow=[todayStr].filter(d=>d>=wsStr&&d<=weStr).length;
  const weeklyCard=page.locator('.weekly-card');
  await expect(weeklyCard.locator('h2')).toContainText(`本周提炼 ${range}`);
  const weeklyBtn=weeklyCard.locator('button.btn-secondary');
  await expect(weeklyBtn).toHaveText(/^(重新)?提炼本周$/);
  await weeklyBtn.click();
- await expect.poll(async()=>((await stateOf(request)).weeklies[wsStr]||{}).recordCount).toBe(inWeek);
- await expect(weeklyCard.locator('.digest-text')).toContainText(`${range} · 共 ${inWeek} 段记录`);
+ await expect.poll(async()=>((await stateOf(request)).weeklies[wsStr]||{}).recordCount).toBe(inWeekNow);
+ await expect(weeklyCard.locator('.digest-text')).toContainText(`${range} · 共 ${inWeekNow} 段记录`);
  dl=page.waitForEvent('download');
  await weeklyCard.locator('[data-export="weekly"]').click();
  download=await dl;
@@ -651,17 +655,18 @@ test('gem flash card stays stable across re-renders, swaps on demand and reviews
 });
 
 
-test('detail navigation asks before discarding a draft and cancellation keeps its fields',async({page,request})=>{
+test('detail navigation preserves per-record drafts',async({page,request})=>{
  const older={...fixture,id:'draft-older',title:'下一段记录',date:'2026-09-25'};
  expect((await request.post('/api/restore',{headers,data:{version:2,records:[fixture,older]}})).ok()).toBeTruthy();
  await page.goto('/');await page.locator('.record-main').first().click();
  await page.locator('#edit-title').fill('还没保存的标题');await page.locator('#edit-summary').fill('还没保存的摘要');
- let canceled=0;const dismiss=async dialog=>{canceled++;await dialog.dismiss()};page.on('dialog',dismiss);
+ // 切到下一条再切回：草稿按记录保留、原样恢复，全程无确认框
  await page.getByRole('button',{name:'下一条记录',exact:true}).click();
- await expect(page.locator('#edit-title')).toHaveValue('还没保存的标题');await expect(page.locator('#edit-summary')).toHaveValue('还没保存的摘要');expect(canceled).toBe(1);
- page.off('dialog',dismiss);page.once('dialog',dialog=>dialog.accept());
- await page.getByRole('button',{name:'下一条记录',exact:true}).click();await expect(page.locator('#modal h2')).toHaveText(older.title);
- await page.getByRole('button',{name:'上一条记录',exact:true}).click();await expect(page.locator('#edit-title')).toHaveValue(fixture.title);
+ await expect(page.locator('#modal h2')).toHaveText('下一段记录');await expect(page.locator('#edit-title')).toHaveValue('下一段记录');
+ await page.getByRole('button',{name:'上一条记录',exact:true}).click();
+ await expect(page.locator('#edit-title')).toHaveValue('还没保存的标题');await expect(page.locator('#edit-summary')).toHaveValue('还没保存的摘要');
+ await expect(await page.evaluate(()=>window.__shengjiHasUnsavedChanges())).toBe(true);
+ // 未保存草稿只留在会话内，不落库
  expect((await stateOf(request)).records.find(r=>r.id===fixture.id).summary).toBe(fixture.summary);
 });
 
@@ -683,7 +688,7 @@ test('detail metadata updates preserve draft edits including typing during an in
  const saved=(await stateOf(request)).records.find(r=>r.id===fixture.id);expect(saved.title).toBe('保留这个草稿标题');expect(saved.summary).toBe('标签保存期间继续输入的摘要');expect(saved.gemTags).toEqual(['方法论']);expect(saved.value).toBe('gem');
 });
 
-test('detail drafts survive polling and canceled native record or import navigation',async({page,request})=>{
+test('detail drafts survive polling and native record or import navigation',async({page,request})=>{
  const other={...fixture,id:'native-target',title:'外部打开的记录',date:'2026-09-25'};
  expect((await request.post('/api/restore',{headers,data:{version:2,records:[fixture,other]}})).ok()).toBeTruthy();
  await page.goto('/');await page.locator('.record-main').first().click();await page.locator('#edit-summary').fill('后台刷新时保留的草稿');
@@ -691,10 +696,10 @@ test('detail drafts survive polling and canceled native record or import navigat
  expect((await request.put('/api/records',{headers,data:{...latest,title:'后台更新完成'}})).ok()).toBeTruthy();
  await expect(page.locator('.record-title').filter({hasText:'后台更新完成'})).toHaveCount(1,{timeout:6000});
  await expect(page.locator('#edit-summary')).toHaveValue('后台刷新时保留的草稿');expect(await page.evaluate(()=>window.__shengjiHasUnsavedChanges())).toBe(true);
- let canceled=0;page.on('dialog',async dialog=>{canceled++;await dialog.dismiss()});
  for(const name of ['shengji-open-record','shengji-import-result']){
   await page.evaluate(({name,id})=>window.dispatchEvent(new CustomEvent(name,{detail:{id}})),{name,id:other.id});
-  await expect.poll(()=>canceled).toBe(name==='shengji-open-record'?1:2);
+  await expect(page.locator('#modal h2')).toHaveText('后台更新完成');
+  await page.evaluate(({name,id})=>window.dispatchEvent(new CustomEvent(name,{detail:{id}})),{name,id:fixture.id});
   await expect(page.locator('#modal h2')).toHaveText(fixture.title);await expect(page.locator('#edit-summary')).toHaveValue('后台刷新时保留的草稿');
  }
  await page.getByRole('button',{name:'保存整理',exact:true}).click();await expect(page.locator('#modal')).not.toBeVisible();

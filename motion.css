@@ -82,3 +82,132 @@ kbd{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 
  .breadcrumbs{display:block;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
  .top-actions{flex-shrink:0}
 }
+
+/* 自定义音频播放器：圆形播放键 + 波形律动 + 进度拖拽（发声的 <audio> 常驻 #audio-host，界面只留控制件） */
+#audio-host{display:none}
+.audio-player{display:flex;align-items:center;gap:12px;padding:12px 14px;margin-top:2px;border-radius:14px;border:1px solid #e6dff4;background:linear-gradient(145deg,#fdfcff,#f1ecf9);box-shadow:inset 1px 1px 0 #fff,0 3px 9px rgba(90,70,120,.1)}
+.audio-play{width:46px;height:46px;min-width:46px;min-height:46px;padding:0;border-radius:50%;display:grid;place-items:center;color:#fff;border:1px solid rgba(255,255,255,.4);background:linear-gradient(160deg,#8465ae 0%,#695092 100%);box-shadow:inset 1px 1px 0 rgba(255,255,255,.5),0 4px 10px rgba(110,84,170,.2);transition:transform .15s var(--spring),box-shadow .2s var(--ease-out)}
+.audio-play:hover{transform:scale(1.05);box-shadow:inset 1px 1px 0 rgba(255,255,255,.5),0 6px 14px rgba(110,84,170,.28)}
+.audio-play:active{transform:scale(.94)}
+.audio-play .when-playing{display:none}
+.audio-player[data-state=playing] .audio-play .when-paused{display:none}
+.audio-player[data-state=playing] .audio-play .when-playing{display:grid}
+.audio-play svg{width:19px;height:19px}
+.audio-wave{flex:1.1;display:flex;align-items:center;gap:2.5px;min-width:0;height:30px;overflow:hidden}
+.audio-wave i{flex:1;max-width:4px;min-width:1.5px;border-radius:2px;background:linear-gradient(180deg,#c3b2ee,#8f77cf);opacity:.72;transform-origin:center;transition:background .3s}
+.audio-player[data-state=playing] .audio-wave i{opacity:1;animation:eq 1s ease-in-out infinite;animation-delay:calc(var(--i)*-.09s)}
+@keyframes eq{0%,100%{transform:scaleY(.5)}50%{transform:scaleY(1.05)}}
+.audio-time{flex:none;min-width:38px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums;color:#6f6584}
+.audio-seek{flex:1.6;min-width:80px;accent-color:#8465ae;cursor:pointer;height:5px}
+
+/* 空状态：麦克风下的小声波轻轻起伏 */
+.empty-wave{display:flex;align-items:center;justify-content:center;gap:3.5px;height:18px;margin:-4px 0 14px}
+.empty-wave i{width:3.5px;height:100%;border-radius:2px;background:linear-gradient(180deg,#c9bcf0,#9a84d6);opacity:.6;transform-origin:center;animation:eq 1.4s ease-in-out infinite;animation-delay:calc(var(--i,0)*.1s)}
+.empty-wave i:nth-child(1){--i:0}.empty-wave i:nth-child(2){--i:1}.empty-wave i:nth-child(3){--i:2}.empty-wave i:nth-child(4){--i:3}.empty-wave i:nth-child(5){--i:4}.empty-wave i:nth-child(6){--i:5}.empty-wave i:nth-child(7){--i:6}.empty-wave i:nth-child(8){--i:3}.empty-wave i:nth-child(9){--i:1}
+
+/* 队列处理中：卡片柔光环呼吸（复用 AI 面板节奏） */
+.queue-job.running{animation:aiPulse 2.2s ease-in-out infinite;border-radius:12px;padding-left:10px;padding-right:10px;margin:0 -10px}
+.queue-job.queued{opacity:.88}
+
+/* 模型状态检查中：缓慢流光示意进行中 */
+.model-status:not(.ready){background:linear-gradient(110deg,#fff0d8 35%,#fff8ea 50%,#fff0d8 65%);background-size:220% 100%;animation:statusSheen 1.8s linear infinite}
+@keyframes statusSheen{to{background-position:-220% 0}}
+
+/* 键盘快捷键帮助表 */
+.shortcut-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 26px;margin-bottom:8px}
+.shortcut-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 4px;border-bottom:1px dashed #e6dff4}
+.shortcut-keys{display:inline-flex;gap:4px;flex:none}
+.shortcut-desc{font-size:14px;color:#55506a;text-align:right}
+
+/* 移动端与安全区 */
+@media(max-width:760px){
+ .audio-wave{display:none}
+ .audio-player{gap:10px}
+ .shortcut-grid{grid-template-columns:1fr}
+}
+.toast{bottom:calc(25px + env(safe-area-inset-bottom,0px))}
+#scroll-top{bottom:calc(24px + env(safe-area-inset-bottom,0px))}
+
+/* 面板空态：图标 + 文案居中 */
+.palette-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:30px 0 26px;color:#71697e;font-size:14px}
+.palette-empty svg{width:26px;height:26px;color:#a394c8}
+
+/* 问答结果：逐条浮入（提交问题后到达时） */
+#answer-results>.answer-item,#answer-results>.form-note{animation:listIn .4s var(--ease-out) both}
+#answer-results>:nth-child(2){animation-delay:.05s}
+#answer-results>:nth-child(3){animation-delay:.1s}
+#answer-results>:nth-child(n+4){animation-delay:.15s}
+
+/* 播放速度切换键 */
+.audio-speed{flex:none;min-width:44px;height:28px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:650;font-variant-numeric:tabular-nums;color:#6f6584;border:1px solid #e0d8f0;background:linear-gradient(165deg,#fff,#f4f0fb);box-shadow:inset 1px 1px 0 #fff,0 2px 5px rgba(90,70,120,.09);transition:color .2s var(--ease-out),border-color .2s var(--ease-out),background .2s var(--ease-out)}
+.audio-speed:hover{color:#433c54;border-color:#c9bce8}
+
+/* 移动端导航条：右缘渐隐提示可横滑，避免图标被截断显得破相 */
+@media(max-width:760px){
+ .sidebar nav{mask-image:linear-gradient(90deg,#000 90%,transparent 100%);-webkit-mask-image:linear-gradient(90deg,#000 90%,transparent 100%)}
+}
+
+/* 搜索命中高亮：标题与摘要里包住关键词 */
+mark{background:#f5e5a9;color:inherit;border-radius:3px;padding:0 1px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+
+/* 统计卡可点击：整卡导航到对应页面 */
+button.stat-card{width:100%;text-align:left}
+button.stat-card:hover{transform:translateY(-2px);border-color:#d5c8f2;box-shadow:0 14px 25px rgba(72,58,110,.16)}
+
+/* 移动端触控目标（390px 走查）：搜索框与输入、导出按钮、记录卡收藏/打开小按钮
+   放大到手指可点的尺寸（≥40px）。规则全部收在 760px 断点内，桌面端不受影响。 */
+@media(max-width:760px){
+ .search-box{min-height:44px;padding-top:0;padding-bottom:0}
+ .search-box input{min-height:44px}
+ .export-btn{min-height:40px;padding-top:9px;padding-bottom:9px}
+ .record-tail .icon-btn{min-width:40px;min-height:40px;width:40px;height:40px;padding:0}
+}
+
+/* 回顾档案：玫瑰色磁贴与折叠卡片 */
+.sidebar nav .nav-item[data-page=recaps]>svg{background:linear-gradient(155deg,#fbd9e4 0%,#ef9fba 58%,#e88aa9 100%)}
+.recap-head,.recap-group{margin-bottom:20px}
+.recap-item{border:1px solid #fffffff0;border-radius:14px;background:var(--glass);box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);margin-bottom:12px;overflow:hidden}
+.recap-item summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;cursor:pointer;list-style:none;font-weight:650;color:#322e3c;transition:background .2s var(--ease-out)}
+.recap-item summary::-webkit-details-marker{display:none}
+.recap-item summary:hover{background:#f4f1fb}
+.recap-item[open] summary{border-bottom:1px solid #efeaf7}
+.recap-count{font-size:12px;color:#8d87a0;font-weight:400;flex:none}
+.recap-item .digest-text{padding:14px 18px 0}
+.recap-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 18px 14px}
+.recap-actions small{color:#8d87a0}
+
+/* 移动端顶栏按钮触控目标 40px（覆盖 styles.css 的 33–38px 移动端规则） */
+@media(max-width:760px){
+ .top-actions .icon-btn{min-width:40px;min-height:40px;width:40px;height:40px;padding:0}
+}
+/* 桌面侧栏主导航溢出渐隐提示（与分类列表同风格），避免「应用关联」被硬切 */
+.sidebar>nav:first-of-type{mask-image:linear-gradient(180deg,#000 92%,transparent 100%);-webkit-mask-image:linear-gradient(180deg,#000 92%,transparent 100%)}
+
+/* 迷你播放器：详情弹窗关闭后的右下角续播条，与弹窗共用宿主 audio。
+   玻璃卡片（圆角 14 / backdrop-blur），出现与消失走 transform+opacity 弹簧过渡；
+   隐藏态用 visibility+pointer-events 兜底，保证不可交互、也不被误判为可见。
+   z-index 低于模态弹窗（<dialog> 打开时在顶层之上）与 toast，遮住同角的回到顶部按钮。 */
+#mini-player{position:fixed;right:22px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:65;display:flex;align-items:center;gap:10px;width:min(430px,calc(100vw - 32px));padding:10px 12px;border-radius:14px;border:1px solid #fffffff0;background:linear-gradient(140deg,#fffffff7,#f4f1fbec);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:var(--shadow),0 12px 28px rgba(72,58,110,.18);opacity:0;visibility:hidden;transform:translateY(16px) scale(.96);pointer-events:none;transition:opacity .32s var(--spring),transform .32s var(--spring),visibility 0s linear .34s}
+#mini-player.show{opacity:1;visibility:visible;transform:none;pointer-events:auto;transition:opacity .32s var(--spring),transform .32s var(--spring),visibility 0s}
+#mini-player .mini-title{flex:1;min-width:0;font-size:13px;font-weight:650;color:#322e3c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mini-player .mini-play{width:38px;height:38px;min-width:38px;min-height:38px}
+#mini-player .mini-play svg{width:16px;height:16px}
+#mini-player .mini-play .when-playing{display:none}
+#mini-player[data-state=playing] .mini-play .when-paused{display:none}
+#mini-player[data-state=playing] .mini-play .when-playing{display:grid}
+#mini-player .mini-seek{flex:1.2;min-width:56px;height:5px;accent-color:#8465ae;cursor:pointer}
+#mini-player .audio-time{min-width:34px;font-size:12px}
+#mini-player .mini-close{min-width:30px;min-height:30px;padding:5px;color:#6f6584;transition:color .2s var(--ease-out)}
+#mini-player .mini-close:hover{color:#433c54}
+#mini-player .mini-close svg{width:15px;height:15px}
+@media(max-width:760px){#mini-player{right:12px;bottom:calc(16px + env(safe-area-inset-bottom,0px));gap:8px;padding:9px 10px}}
+
+/* 迷你播放器深色主题：与深色 audio-player 同族的暗玻璃 */
+[data-theme="dark"] #mini-player{border-color:#ffffff10;background:linear-gradient(140deg,#282239f5,#1f1a2eec);box-shadow:0 12px 28px #06041166,inset 1px 1px 0 #ffffff0a}
+[data-theme="dark"] #mini-player .mini-title{color:#e8e2f4}
+[data-theme="dark"] #mini-player .mini-close{color:#a89fc2}
+[data-theme="dark"] #mini-player .mini-close:hover{color:#e2dcf0}
+
+/* 显示更多：居中次级按钮，移动端保持 44px 触控 */
+.show-more{display:block;margin:0 auto 24px;min-height:44px;padding:10px 22px;color:#6f6a84}
+.show-more:hover{color:#3a3058;border-color:#d5c8f2}
