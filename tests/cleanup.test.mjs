@@ -127,12 +127,13 @@ test('a failed chunk passes through raw while the other chunks still clean', asy
   const progress = [];
   mock(t, async (_url, options) => {
     calls++;
-    if (calls === 2) throw new TypeError('offline');
+    /* 失败块自动重试一次（calls===3 为重试）：两次都失败才透传原文 */
+    if (calls === 2 || calls === 3) throw new TypeError('offline');
     const source = userPayload(options).segment.text;
     return source.includes('嗯') ? response({ deletions: [{ quote: '嗯', occurrence: 1 }] }) : none();
   });
   const output = await cleanTranscript(text, { onProgress: (done, total) => progress.push([done, total]) });
-  assert.equal(calls, 3);
+  assert.equal(calls, 4);/* 失败块重试一次：2 次失败 + 1 次成功 + 1 次其他块 */
   assert.equal(output.chunksFailed, 1);
   assert.equal(output.text, `${'甲'.repeat(2000)}。${'乙'.repeat(2000)}。${'丙'.repeat(2000)}。`);
   assert.deepEqual(progress, [[1, 3], [2, 3], [3, 3]]);

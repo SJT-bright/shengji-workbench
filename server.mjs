@@ -1,4 +1,7 @@
 import http from 'node:http';
+import zlib from 'node:zlib';
+import {promisify} from 'node:util';
+import {once} from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -13,6 +16,7 @@ import {answerFromRecords,findRelevantRecords} from './record-qa.mjs';
 import {handleConnectorApi} from './connector-routes.mjs';
 import {createConnectorService} from './connectors/index.mjs';
 const base=path.dirname(fileURLToPath(import.meta.url));
+const gzipAsync=promisify(zlib.gzip);
 /* /api/health 版本号单一事实源：模块加载时读 package.json，读失败回退内置值 */
 let appVersion='0.4.0';try{appVersion=JSON.parse(fs.readFileSync(path.join(base,'package.json'),'utf8')).version||appVersion}catch(e){console.error('读取 package.json 版本失败，回退内置版本 0.4.0：',e?.message||e)}
 const port=Number(process.env.SHENGJI_PORT||5189);
@@ -144,26 +148,37 @@ process.on('uncaughtException',e=>console.error('未捕获异常：',e?.stack||e
 
 /* 孤儿附件回收：originals/ 与 audio/ 只写不删，按引用计数清理不再被任何记录引用的文件 */
 function referencedHashes(){const refs=new Set();for(const r of db.records){if(r.audio?.hash)refs.add(r.audio.hash);if(r.source?.hash)refs.add(r.source.hash);if(r.transcript)refs.add(cleanHash(r.transcript))}return refs}
+const cleanupCandidates=new Set();let gcTimer=null;
 function cleanupOrphans(){
- const refs=referencedHashes(),now=Date.now();let removed=0;
- for(const [dir,suffix] of [[originalsDir,'.txt'],[audioDir,'']]){
-  let names;try{names=fs.readdirSync(dir)}catch{continue}
-  for(const name of names){
-   if(!name.endsWith(suffix)||name.length!==64+suffix.length||!/^[a-f0-9]{64}$/.test(name.slice(0,64))||refs.has(name.slice(0,64)))continue;
-   try{const file=path.join(dir,name),stat=fs.statSync(file);if(stat.isFile()&&now-stat.mtimeMs>60000){fs.unlinkSync(file);removed++}}
-   catch{}
+ const refs=referencedHashes(),now=Date.now();let removed=0,nextDelay=60000;
+ for(const hash of cleanupCandidates){
+  if(refs.has(hash)){cleanupCandidates.delete(hash);continue}
+  let pending=false;
+  for(const [dir,suffix] of [[originalsDir,'.txt'],[audioDir,'']]){
+   try{
+    const file=path.join(dir,hash+suffix),stat=fs.lstatSync(file);
+    if(!stat.isFile())continue;
+    const remaining=60000-(now-stat.mtimeMs);
+    if(remaining<=0){fs.unlinkSync(file);removed++}
+    else{pending=true;nextDelay=Math.min(nextDelay,remaining+100)}
+   }catch(error){if(error.code!=='ENOENT'){pending=true;console.error('附件回收失败：',error.message)}}
   }
+  if(!pending)cleanupCandidates.delete(hash);
  }
  if(removed)console.error(`孤儿文件回收：已删除 ${removed} 个不再被任何记录引用的文件（超过 60 秒宽限期）`);
+ if(cleanupCandidates.size)scheduleCleanup([],Math.max(1000,nextDelay));
 }
 function runCleanupSafely(){try{cleanupOrphans()}catch(e){console.error('孤儿文件回收失败：',e?.stack||e)}}
-let gcTimer=null;
-function scheduleCleanup(){if(gcTimer)return;gcTimer=setTimeout(()=>{gcTimer=null;runCleanupSafely()},1000);gcTimer.unref()}
+function scheduleCleanup(hashes=[],delay=1000){
+ for(const hash of hashes)if(/^[a-f0-9]{64}$/.test(hash))cleanupCandidates.add(hash);
+ if(!cleanupCandidates.size)return;
+ clearTimeout(gcTimer);gcTimer=setTimeout(()=>{gcTimer=null;runCleanupSafely()},delay);gcTimer.unref();
+}
 
 let stability=new Map(),watchError='',lastScan='',scanBusy=false;
 async function scan(){if(scanBusy||!db.settings.watchEnabled)return;scanBusy=true;const errors=[];try{const folder=fs.realpathSync(db.settings.watchFolder);const names=fs.readdirSync(folder);const present=new Set();for(const name of names){if(name.startsWith('.')||! /\.(txt|md|srt|vtt|mp3|m4a|wav)$/i.test(name))continue;const f=path.join(folder,name);try{const stat=fs.lstatSync(f);if(!stat.isFile()||stat.isSymbolicLink())continue;present.add(f);const isAudio=/\.(mp3|m4a|wav)$/i.test(name);if(stat.size>(isAudio?100:5)*1024*1024)throw new Error('文件过大，未自动导入');const mark=`${stat.size}:${stat.mtimeMs}`;if(stability.get(f)!==mark){stability.set(f,mark)}else if(isAudio){const bytes=await fs.promises.readFile(f);if(bytes.length>100*1024*1024)throw new Error('文件过大，未自动导入');if(!db.seenHashes.includes(cleanHash(bytes)))newAudioRecord({audio:{name,data:bytes.toString('base64')},sourcePath:f,date:localDate(stat.mtime),time:stat.mtime.toTimeString().slice(0,5),dateBasis:'文件修改时间（可手动更正）'})}else{let raw;try{raw=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(await fs.promises.readFile(f))}catch{throw new Error('不是有效的 UTF-8 文字，请重新导出')}if(raw.trim()){if(raw.includes('\u0000'))throw new Error('不是纯文字文件，请重新导出');const hash=cleanHash(parseTranscript(raw,name));if(!db.seenHashes.includes(hash)){const modified=stat.mtime;newRecord({text:raw,filename:name,sourcePath:f,date:localDate(modified),time:modified.toTimeString().slice(0,5),dateBasis:'文件修改时间（可手动更正）'})}}}}catch(e){errors.push(`${name}：${e.message}`)}await new Promise(r=>setImmediate(r))}for(const key of stability.keys())if(!present.has(key))stability.delete(key);lastScan=new Date().toISOString();watchError=errors.slice(0,3).join('；');}catch(e){watchError=`无法读取监测文件夹：${e.code==='ENOENT'?'文件夹不存在':e.code==='EACCES'?'没有访问权限':e.message}`}finally{scanBusy=false}}
 
-const timer=setInterval(scan,5000);timer.unref();setTimeout(()=>{scan();runQueue()},500);setTimeout(runCleanupSafely,10000).unref();
+const timer=setInterval(scan,5000);timer.unref();setTimeout(()=>{scan();runQueue()},500);
 async function readBody(req,sizeLimit=2*1024*1024){const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>sizeLimit)throw new Error(`请求体过大（超过 ${Math.round(sizeLimit/1024/1024)} MB），请分批导入`);chunks.push(chunk)}return JSON.parse(Buffer.concat(chunks).toString()||'{}')}
 function digestFallback(day,records){
  const [,month,dayOfMonth]=day.split('-').map(Number);
@@ -260,7 +275,20 @@ const server=http.createServer(async(req,res)=>{try{
  if(p==='/api/session'&&req.method==='GET')return json(res,200,{token});
  if(p.startsWith('/api/')&&req.headers['x-shengji-token']!==token)return json(res,401,{error:'请重新打开声迹以连接本地服务'});
  if(await handleConnectorApi(req,res,{service:connectorService,readBody,json}))return;
- if(p==='/api/state'&&req.method==='GET')return json(res,200,{records:db.records,categories:db.categories,categoryRevision:db.categoryRevision,settings:db.settings,digests:db.digests,weeklies:db.weeklies,monthlies:db.monthlies,yearlies:db.yearlies,doneActions:db.doneActions,revision:db.revision,watch:{lastScan,error:watchError},dataDir,defaultInbox,activeId,database:store.stats()});
+ if(p==='/api/revision'&&req.method==='GET')return json(res,200,{revision:db.revision,categoryRevision:db.categoryRevision,lastScan,watchError});
+ if(p==='/api/state'&&req.method==='GET'){
+  const state={records:db.records,categories:db.categories,categoryRevision:db.categoryRevision,settings:db.settings,digests:db.digests,weeklies:db.weeklies,monthlies:db.monthlies,yearlies:db.yearlies,doneActions:db.doneActions,revision:db.revision,watch:{lastScan,error:watchError},dataDir,defaultInbox,activeId,database:store.stats()};
+  const acceptsGzip=String(req.headers['accept-encoding']||'').split(',').some(entry=>{
+   const [coding,...parameters]=entry.trim().split(';');
+   const quality=parameters.find(value=>/^\s*q\s*=/i.test(value));
+   return coding.toLowerCase()==='gzip'&&(!quality||Number(quality.split('=')[1])>0);
+  });
+  res.setHeader('Vary','Accept-Encoding');
+  if(!acceptsGzip)return json(res,200,state);
+  const body=await gzipAsync(Buffer.from(JSON.stringify(state)));
+  res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Content-Encoding':'gzip','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+  return res.end(body);
+ }
  if(p==='/api/search'&&req.method==='GET'){const q=(url.searchParams.get('q')||'').trim();if(q.length>500)throw new Error('搜索内容最多 500 字');return json(res,200,{records:store.search(q,50)});}
  if(p==='/api/ask'&&req.method==='POST'){
   const {question}=await readBody(req);if(typeof question!=='string'||!question.trim()||question.length>500)throw new Error('请填写 1–500 字的问题');
@@ -293,7 +321,7 @@ const server=http.createServer(async(req,res)=>{try{
  }
  if(p==='/api/import'&&req.method==='POST')return json(res,200,newRecord(await readBody(req)));
  if(p==='/api/records'&&req.method==='PUT'){const input=await readBody(req);validateRecord(input,db.categories);validateValueFields(input);const current=db.records.find(r=>r.id===input.id);if(!current)return json(res,404,{error:'记录不存在'});if((input.revision||0)!==(current.revision||0))return json(res,409,{error:'记录已更新，请重新打开后编辑，避免覆盖新内容'});const picked={};for(const k of recordFieldKeys)if(input[k]!==undefined)picked[k]=input[k];const saved={...picked,audio:current.audio,transcription:current.transcription,categoryManual:input.category!==current.category?true:current.categoryManual,source:{...current.source,...((input.date!==current.date||input.time!==current.time)?{dateBasis:'手动设置'}:{})},ai:current.ai,transcript:current.transcript,revision:(current.revision||0)+1};mutate(n=>{n.records[n.records.findIndex(r=>r.id===input.id)]=saved});return json(res,200,saved)}
- if(p==='/api/records'&&req.method==='DELETE'){const {id}=await readBody(req);if(activeId===id)activeAbort?.abort();mutate(n=>{n.records=n.records.filter(r=>r.id!==id)});queueMicrotask(scheduleCleanup);return json(res,200,{ok:true})}
+ if(p==='/api/records'&&req.method==='DELETE'){const {id}=await readBody(req),previousRefs=referencedHashes();if(activeId===id)activeAbort?.abort();mutate(n=>{n.records=n.records.filter(r=>r.id!==id)});scheduleCleanup(previousRefs);return json(res,200,{ok:true})}
  if(p==='/api/analyze'&&req.method==='POST'){const {id}=await readBody(req);const r=db.records.find(r=>r.id===id);if(!r)return json(res,404,{error:'记录不存在'});if(!r.transcript.trim())throw new Error('请先补充文字稿，再进行 AI 整理');if(!['queued','running'].includes(r.ai?.status))mutate(n=>{n.records.find(r=>r.id===id).ai={...r.ai,status:'queued',error:'',model:db.settings.model}});queueMicrotask(runQueue);return json(res,200,{ok:true})}
  if(p==='/api/digest'&&req.method==='POST'){
  const {date:day}=await readBody(req);
@@ -351,24 +379,26 @@ const server=http.createServer(async(req,res)=>{try{
  if(p==='/api/scan'&&req.method==='POST'){await scan();return json(res,200,{ok:true,error:watchError,lastScan})}
  if(p==='/api/backup'&&req.method==='GET'){
   /* 分块写出：响应仍是一个完整 JSON（字段与旧实现完全一致），但不再把全部音频读进内存拼整包字符串 */
-  const history=backupHistory(db);
+  const snapshot=db,history=backupHistory(snapshot),controller=new AbortController();
+  const closed=()=>controller.abort();res.once('close',closed);
+  const writeChunk=async chunk=>{if(res.destroyed)throw new Error('备份下载已断开');if(!res.write(chunk))await once(res,'drain',{signal:controller.signal})};
   try{
    res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
-   res.write(JSON.stringify({version:2,exportedAt:new Date().toISOString(),records:db.records,categories:db.categories,...history}).slice(0,-1)+',"audioFiles":{');
+   await writeChunk(JSON.stringify({version:2,exportedAt:new Date().toISOString(),records:snapshot.records,categories:snapshot.categories,...history}).slice(0,-1)+',"audioFiles":{');
    let first=true;
-   for(const hash of new Set(db.records.filter(r=>r.audio).map(r=>r.audio.hash))){
+   for(const hash of new Set(snapshot.records.filter(r=>r.audio).map(r=>r.audio.hash))){
     const bytes=await fs.promises.readFile(path.join(audioDir,hash));
-    res.write(`${first?'':','}${JSON.stringify(hash)}:"${bytes.toString('base64')}"`);first=false;
+    await writeChunk(`${first?'':','}${JSON.stringify(hash)}:"${bytes.toString('base64')}"`);first=false;
     await new Promise(r=>setImmediate(r));
    }
-   res.write('},"originals":{');
+   await writeChunk('},"originals":{');
    const fallbacks=new Map();
-   for(const r of db.records){const hash=cleanHash(r.transcript);if(!fallbacks.has(hash))fallbacks.set(hash,r.transcript)}
+   for(const r of snapshot.records){const hash=cleanHash(r.transcript);if(!fallbacks.has(hash))fallbacks.set(hash,r.transcript)}
    first=true;
    for(const [hash,fallback] of fallbacks){
     const file=path.join(originalsDir,hash+'.txt');
     const raw=fs.existsSync(file)?await fs.promises.readFile(file,'utf8'):fallback;
-    res.write(`${first?'':','}${JSON.stringify(hash)}:${JSON.stringify(raw)}`);first=false;
+    await writeChunk(`${first?'':','}${JSON.stringify(hash)}:${JSON.stringify(raw)}`);first=false;
     await new Promise(r=>setImmediate(r));
    }
    res.end('}}');
@@ -376,7 +406,7 @@ const server=http.createServer(async(req,res)=>{try{
    /* 响应已开始就只能断开，让客户端把这次备份当作损坏重试 */
    if(res.headersSent)res.destroy();else json(res,400,{error:String(e.message||'操作失败').slice(0,700)});
    console.error('备份导出失败：',e?.stack||e);
-  }
+  }finally{res.off('close',closed)}
   return;
  }
  if((p==='/api/restore'||p==='/api/migrate')&&req.method==='POST'){
@@ -399,17 +429,17 @@ const server=http.createServer(async(req,res)=>{try{
   }
   for(const {raw,hash} of staged)preserveOriginal(raw,hash);
   for(const {bytes,hash} of stagedAudio)preserveAudio(bytes,hash);
-  activeAbort?.abort();
+  const previousRefs=referencedHashes();activeAbort?.abort();
   mutate(n=>{
    n.records=imported;n.categories=structuredClone(input.categories??categories);n.categoryRevision++;
    Object.assign(n,history);
    n.seenHashes=[...new Set([...n.seenHashes,...imported.flatMap(r=>[r.source.hash,...(r.audio?[r.audio.hash]:[])])])];
   });
   libraryGeneration++;
-  queueMicrotask(scheduleCleanup);
+  scheduleCleanup(previousRefs);
   return json(res,200,{ok:true,count:imported.length});
  }
- if(p==='/api/clear-demo'&&req.method==='POST'){mutate(n=>{n.records=n.records.filter(r=>!r.demo)});return json(res,200,{ok:true})}
+ if(p==='/api/clear-demo'&&req.method==='POST'){const previousRefs=referencedHashes();mutate(n=>{n.records=n.records.filter(r=>!r.demo)});scheduleCleanup(previousRefs);return json(res,200,{ok:true})}
  if(p.startsWith('/api/'))return json(res,404,{error:'接口不存在'});
  if(req.method!=='GET')return json(res,405,{error:'方法不支持'});
  const root=path.join(base,'dist'),file=path.resolve(root,'.'+decodeURIComponent(p==='/'?'/index.html':p));if(!file.startsWith(root+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile())return json(res,404,{error:'页面不存在，请先构建应用'});

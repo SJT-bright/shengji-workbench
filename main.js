@@ -187,7 +187,9 @@ function releaseAudio(){audioLoadVersion++;if(audioObjectURL){URL.revokeObjectUR
 /* 按记录保存的未提交草稿：跳转、开关弹窗、打开其他工具弹窗都不会丢 */
 function captureDetailDraft(){
  const form=modal.querySelector('#detail-form');
- if(!form||!currentId||(!dirty&&!detailDrafts.has(currentId)))return;
+ if(!currentId)return;
+ if(!form){if(tabDraft){detailDrafts.set(currentId,{fields:tabDraft});persistDrafts()}return}
+ if(!dirty&&!detailDrafts.has(currentId))return;
  detailDrafts.set(currentId,{fields:[...form.querySelectorAll('input,textarea,select')].map(el=>({id:el.id,value:el.value,checked:el.checked}))});
  persistDrafts();
 }
@@ -199,7 +201,7 @@ function restoreDetailDraft(id){
  const draft=detailDrafts.get(id);
  if(!draft)return false;
  for(const f of draft.fields){const el=document.getElementById(f.id);if(el){el.value=f.value;if(el.type==='checkbox')el.checked=f.checked}}
- dirty=true;detailDrafts.delete(id);persistDrafts();
+ dirty=true;
  toast('已恢复这条记录的未保存草稿');
  return true;
 }
@@ -262,7 +264,7 @@ function openDetail(id){
  if(importBusy){toast('正在保存导入队列，请稍候');return false}
  if(!records.some(r=>r.id===id))return false;
  captureDetailDraft();
- currentId=id;detailTab='notes';renderDetail();
+ tabDraft=null;currentId=id;detailTab='notes';renderDetail();
  restoreDetailDraft(id);
  return true;
 }
@@ -340,7 +342,12 @@ window.addEventListener('shengji-folder',e=>{const el=document.querySelector('#w
 window.addEventListener('shengji-export',e=>{if(e.detail?.error)toast(e.detail.error);else if(e.detail?.path)toast('已导出到 '+e.detail.path)});
 async function boot(){bindPalette({dialog:document.querySelector('#palette'),icon,getRecords:()=>records,getCategories:()=>categories,goto:p=>{page=p;filter='all';query='';selectedDate='';refresh()},openRecord:openDetail,toast,actions:[{icon:'upload',label:'导入录音 / 文字',run:()=>openImport()},{icon:'spark',label:'自动整理设置',run:()=>openAutomation()},{icon:'download',label:'数据备份与恢复',run:()=>openBackup()},{icon:'zap',label:'键盘快捷键',run:()=>openShortcuts()}]});document.querySelector('#app').innerHTML='<div class="boot-state"><h1>声迹</h1><p>正在打开你的声音记忆……</p></div>';try{await initData();connectionError='';refresh();startPolling()}catch(e){document.querySelector('#app').innerHTML=`<div class="boot-state"><h1>声迹</h1><p>${esc(e.message)}</p><button class="btn btn-primary" id="retry-boot">重新连接</button><p class="form-note">请打开「声迹.app」，应用会自动启动本地服务。</p></div>`;document.querySelector('#retry-boot').onclick=boot}}
 let pollTimer=null,pollBusy=false;
-function startPolling(){clearInterval(pollTimer);pollTimer=setInterval(async()=>{if(pollBusy)return;pollBusy=true;try{const prev=JSON.stringify(appState);const oldRecord=records.find(r=>r.id===currentId);await syncData();const next=getState();const changed=next.revision!==appState.revision||next.categoryRevision!==appState.categoryRevision||next.watch.error!==appState.watch.error||connectionError;connectionError='';if(changed){refresh();const updated=records.find(r=>r.id===currentId);if(modal.open&&!dirty&&!savingDetailForm&&(modal.querySelector('#detail-form')||modal.querySelector('.transcript'))&&JSON.stringify(oldRecord)!==JSON.stringify(updated)){if(updated)renderDetail();else{modal.close();toast('此记录已从资料库中移除')}}}}catch(e){if(!connectionError){connectionError=e.message;render()}}finally{pollBusy=false}},2500)}
+function startPolling(){clearInterval(pollTimer);pollTimer=setInterval(async()=>{if(pollBusy)return;pollBusy=true;try{
+ /* 轮询先问一个标量端点：库没变化就不拉全量状态（大库下每 2.5s 5MB 的税归零） */
+ const rev=await api('revision');
+ const unchanged=rev.revision===appState.revision&&rev.categoryRevision===appState.categoryRevision&&rev.watchError===appState.watch.error;
+ if(unchanged){const recovered=Boolean(connectionError);connectionError='';appState.watch.lastScan=rev.lastScan;if(recovered)render();return}
+ const oldRecord=records.find(r=>r.id===currentId);await syncData();const next=getState();const changed=next.revision!==appState.revision||next.categoryRevision!==appState.categoryRevision||next.watch.error!==appState.watch.error||connectionError;connectionError='';if(changed){refresh();const updated=records.find(r=>r.id===currentId);if(modal.open&&!dirty&&!savingDetailForm&&(modal.querySelector('#detail-form')||modal.querySelector('.transcript'))&&JSON.stringify(oldRecord)!==JSON.stringify(updated)){if(updated)renderDetail();else{modal.close();toast('此记录已从资料库中移除')}}}}catch(e){if(!connectionError){connectionError=e.message;render()}}finally{pollBusy=false}},2500)}
 
 window.__shengjiHasUnsavedChanges=()=>Boolean(dirty||savingDetailForm)&&modal.open||detailDrafts.size>0;
 window.addEventListener('shengji-model',e=>{toast(e.detail?.error||e.detail?.message||'正在打开本地模型服务')});

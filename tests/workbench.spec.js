@@ -666,7 +666,7 @@ test('detail navigation preserves per-record drafts',async({page,request})=>{
  await page.getByRole('button',{name:'上一条记录',exact:true}).click();
  await expect(page.locator('#edit-title')).toHaveValue('还没保存的标题');await expect(page.locator('#edit-summary')).toHaveValue('还没保存的摘要');
  await expect(await page.evaluate(()=>window.__shengjiHasUnsavedChanges())).toBe(true);
- // 未保存草稿只留在会话内，不落库
+ // 未保存草稿保存在本机草稿区，不写入正式记录
  expect((await stateOf(request)).records.find(r=>r.id===fixture.id).summary).toBe(fixture.summary);
 });
 

@@ -1,7 +1,7 @@
 // Explicit live integration check with synthetic material, never a user's library.
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawn} from 'node:child_process';import assert from 'node:assert/strict';
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'shengji-live-'));const inbox=path.join(dir,'inbox'),db=path.join(dir,'data');const port=5195;const token='live-integration-token';
-const child=spawn(process.execPath,['server.mjs'],{cwd:process.cwd(),env:{...process.env,SHENGJI_PORT:String(port),SHENGJI_TOKEN:token,SHENGJI_DATA_DIR:db,SHENGJI_INBOX:inbox},stdio:'ignore'});
+const child=spawn(process.execPath,['server.mjs'],{cwd:process.env.SHENGJI_RUNTIME_DIR||process.cwd(),env:{...process.env,SHENGJI_PORT:String(port),SHENGJI_TOKEN:token,SHENGJI_DATA_DIR:db,SHENGJI_INBOX:inbox},stdio:'ignore'});
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const api=async(p,method='GET',body)=>{const r=await fetch(`http://127.0.0.1:${port}/api/${p}`,{method,headers:{'X-Shengji-Token':token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw new Error(data.error);return data};
 try{for(let i=0;i<40;i++){try{await api('health');break}catch{await pause(200)}}

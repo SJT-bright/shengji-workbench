@@ -1,5 +1,5 @@
 // Light filler cleanup. The transcript is untrusted data and is never rewritten by the model.
-const ENDPOINT = 'http://127.0.0.1:11434/api/chat';
+const ENDPOINT = process.env.SHENGJI_AI_ENDPOINT || 'http://127.0.0.1:11434/api/chat';
 const MODELS = new Set(['qwen2.5:7b', 'qwen3:14b']);
 const TIMEOUT_MS = 90_000;
 const MAX_CHARACTERS = 80_000;
@@ -255,7 +255,15 @@ export async function cleanTranscript(text, { model = 'qwen2.5:7b', signal, onPr
   for (let index = 0; index < chunks.length; index++) {
     let plan = null;
     try {
-      plan = await requestDeletions(chunks[index], model, signal);
+      try {
+        plan = await requestDeletions(chunks[index], model, signal);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        /* 瞬态抖动常见：失败块自动重试一次，仍失败才透传原文 */
+        await new Promise(resolve => setTimeout(resolve, 400));
+        if (signal?.aborted) throw error;
+        plan = await requestDeletions(chunks[index], model, signal);
+      }
     } catch (error) {
       if (signal?.aborted) throw error;/* 取消不是单块失败：保持整体取消语义 */
       chunksFailed++;

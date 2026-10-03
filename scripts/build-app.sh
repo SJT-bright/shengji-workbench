@@ -2,6 +2,7 @@
 set -euo pipefail
 PROJECT_DIR="${0:A:h:h}"
 cd "$PROJECT_DIR"
+APP_VERSION="$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')"
 npm run build
 APP_DIR="$PROJECT_DIR/release/声迹.app"
 RES_DIR="$APP_DIR/Contents/Resources"
@@ -20,7 +21,7 @@ rm -rf "$RES_DIR/app/connectors"
 cp -R connectors "$RES_DIR/app/connectors"
 mkdir -p "$RES_DIR/app/native"
 cp native/transcribe_audio.py "$RES_DIR/app/native/"
-swiftc -O native/Shengji.swift -o "$APP_DIR/Contents/MacOS/Shengji" -framework AppKit -framework WebKit
+swiftc -O -target "$(uname -m)-apple-macosx13.5" native/Shengji.swift -o "$APP_DIR/Contents/MacOS/Shengji" -framework AppKit -framework WebKit
 ICON_DIR="$(mktemp -d)/Shengji.iconset"
 mkdir -p "$ICON_DIR"
 swift native/Icon.swift "$ICON_DIR/icon_512x512@2x.png"
@@ -40,18 +41,19 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>声迹</string>
 <key>CFBundleDisplayName</key><string>声迹</string>
 <key>CFBundleIdentifier</key><string>local.shengji.desktop</string>
-<key>CFBundleVersion</key><string>6</string>
-<key>CFBundleShortVersionString</key><string>0.5.1</string>
+<key>CFBundleVersion</key><string>7</string>
+<key>CFBundleShortVersionString</key><string>APP_VERSION_PLACEHOLDER</string>
 <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>local.shengji.record</string><key>CFBundleURLSchemes</key><array><string>shengji</string></array></dict></array>
 <key>CFBundleDocumentTypes</key><array><dict><key>CFBundleTypeName</key><string>录音与转写稿</string><key>CFBundleTypeRole</key><string>Viewer</string><key>LSHandlerRank</key><string>Alternate</string><key>CFBundleTypeExtensions</key><array><string>mp3</string><string>m4a</string><string>wav</string><string>txt</string><string>md</string><string>srt</string><string>vtt</string></array></dict></array>
 <key>CFBundleExecutable</key><string>Shengji</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>Shengji</string>
-<key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>LSMinimumSystemVersion</key><string>13.5</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 PLIST
+/usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $APP_VERSION" "$APP_DIR/Contents/Info.plist"
 codesign --force --sign - "$RES_DIR/node"
 codesign --force --deep --sign - "$APP_DIR"
 codesign --verify --deep --strict "$APP_DIR"

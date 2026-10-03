@@ -65,23 +65,25 @@ test('restore replaces the library and orphans of the old library are reclaimed'
  assert.equal(await fs.readFile(original,'utf8'),record.transcript,'恢复后的原文仍在宽限期内且被引用，不得回收');
 });
 
-test('files within the grace period survive cleanup while aged orphans are reclaimed',async t=>{
- const {api,data,logs}=await fixture(t);
+test('only files unreferenced by library changes are reclaimed; pre-existing files stay intact',async t=>{
+ const {api,data}=await fixture(t);
  const originals=path.join(data,'originals'),audio=path.join(data,'audio');
- const agedOriginal=path.join(originals,'a'.repeat(64)+'.txt'),freshOriginal=path.join(originals,'b'.repeat(64)+'.txt');
- const agedAudio=path.join(audio,'c'.repeat(64)),freshAudio=path.join(audio,'d'.repeat(64));
- await fs.writeFile(agedOriginal,'陈年孤儿原文');await fs.writeFile(freshOriginal,'新鲜孤儿原文');
- await fs.writeFile(agedAudio,'陈年孤儿音频');await fs.writeFile(freshAudio,'新鲜孤儿音频');
- const stray=path.join(originals,'notes.txt');await fs.writeFile(stray,'不是哈希命名的文件');
- await age(agedOriginal);await age(agedAudio);await age(stray);
+ const agedOriginal=path.join(originals,'a'.repeat(64)+'.txt'),agedAudio=path.join(audio,'c'.repeat(64));
+ await fs.writeFile(agedOriginal,'旧版留下的未关联原文');await fs.writeFile(agedAudio,'旧版留下的未关联音频');
+ await age(agedOriginal);await age(agedAudio);
  const imported=await api('/api/import',{method:'POST',body:{text:'仍被引用的原文。',autoAnalyze:false}});
  const referenced=path.join(originals,imported.body.record.source.hash+'.txt');await age(referenced);
- await api('/api/records',{method:'DELETE',body:{id:'不存在的记录'}});
- await waitFor(async()=>!(await exists(agedOriginal)));
- await waitFor(async()=>!(await exists(agedAudio)));
- assert.equal(await exists(freshOriginal),true,'宽限期内的孤儿原文不得删除');
- assert.equal(await exists(freshAudio),true,'宽限期内的孤儿音频不得删除');
+ const fresh=(await api('/api/import',{method:'POST',body:{text:'删除后先经过宽限期的原文。',autoAnalyze:false}})).body.record;
+ const freshFile=path.join(originals,fresh.source.hash+'.txt');
+ await api('/api/records',{method:'DELETE',body:{id:fresh.id}});
+ await sleep(1500);
+ assert.equal(await exists(freshFile),true,'宽限期内的原文不得删除');
+ assert.equal(await exists(agedOriginal),true,'未因本次记录删除失去引用的旧原文必须保留');
+ assert.equal(await exists(agedAudio),true,'旧版留下的未关联音频必须保留');
  assert.equal(await exists(referenced),true,'仍被引用的原文不得删除');
- assert.equal(await exists(stray),true,'非哈希命名的文件不属于回收范围');
- assert.match(logs(),/孤儿文件回收：已删除 2 个/);
+ await age(freshFile);
+ await api('/api/records',{method:'DELETE',body:{id:'不存在的记录'}});
+ await waitFor(async()=>!(await exists(freshFile)));
+ assert.equal(await exists(agedOriginal),true);
+ assert.equal(await exists(agedAudio),true);
 });

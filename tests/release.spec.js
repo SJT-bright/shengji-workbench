@@ -1,0 +1,94 @@
+import {test,expect} from '@playwright/test';
+const headers={'X-Shengji-Token':'ui-test-token'};
+const record={id:'release-fixture',title:'版本验收记录',category:'learn',date:'2026-10-03',time:'10:00',duration:1,transcript:'这是一条只用于隔离验收的记录。',summary:'验证草稿与回放。',highlights:[],learnings:[],actions:[],tags:[],favorite:false,reviewed:false,demo:false,source:{name:'fixture.txt'},revision:1,ai:{status:'none'}};
+test.beforeEach(async({request})=>{
+ const state=await(await request.get('/api/state',{headers})).json();
+ expect((await request.put('/api/settings',{headers,data:{...state.settings,autoAnalyze:false,watchEnabled:false}})).ok()).toBeTruthy();
+ expect((await request.post('/api/restore',{headers,data:{version:2,records:[record]}})).ok()).toBeTruthy();
+});
+test('theme follows the system and remembers explicit choices after reload',async({page})=>{
+ await page.emulateMedia({colorScheme:'light'});await page.goto('/');
+ await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+ await page.locator('.sidebar [data-action="theme"]').click();
+ await page.locator('.sidebar [data-action="theme"]').click();
+ await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+ await page.reload();await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+ await page.locator('.sidebar [data-action="theme"]').click();
+ await page.emulateMedia({colorScheme:'dark'});
+ await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+ await page.emulateMedia({colorScheme:'light'});
+ await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+});
+test('restored drafts remain durable through repeated reloads and clear only on save',async({page,request})=>{
+ await page.goto('/');await page.locator('.record-main').click();
+ await page.locator('#edit-title').fill('仍未保存的标题');
+ await page.locator('#edit-summary').fill('仍未保存的摘要');
+ // 切到原文后立即刷新，不能依赖 300ms 的输入防抖已经执行。
+ await page.locator('[data-tab="raw"]').click();await page.reload();
+ await page.locator('.record-main').click();
+ await expect(page.locator('#edit-title')).toHaveValue('仍未保存的标题');
+ await expect(page.locator('#edit-summary')).toHaveValue('仍未保存的摘要');
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('shengji.drafts.v1'))['release-fixture'].fields.some(f=>f.value==='仍未保存的摘要'))).toBe(true);
+ await page.reload();await page.locator('.record-main').click();
+ await expect(page.locator('#edit-summary')).toHaveValue('仍未保存的摘要');
+ expect((await(await request.get('/api/state',{headers})).json()).records[0].summary).toBe(record.summary);
+ await page.locator('#detail-form button[type="submit"]').click();
+ await expect(page.locator('#modal')).not.toBeVisible();
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('shengji.drafts.v1'))['release-fixture'])).toBeUndefined();
+ expect((await(await request.get('/api/state',{headers})).json()).records[0].summary).toBe('仍未保存的摘要');
+});
+test('drafts on the original tab stay with their record during navigation',async({page,request})=>{
+ const other={...record,id:'release-other',title:'另一条记录',date:'2026-10-02',summary:'另一条的摘要'};
+ expect((await request.post('/api/restore',{headers,data:{version:2,records:[record,other]}})).ok()).toBeTruthy();
+ await page.goto('/');await page.locator(`[data-open="${record.id}"]`).first().click();
+ await page.locator('#edit-summary').fill('第一条未保存的摘要');
+ await page.locator('[data-tab="raw"]').click();await page.getByRole('button',{name:'下一条记录',exact:true}).click();
+ await page.locator('[data-tab="raw"]').click();await page.locator('[data-tab="notes"]').click();
+ await expect(page.locator('#edit-summary')).toHaveValue(other.summary);
+ await page.getByRole('button',{name:'上一条记录',exact:true}).click();
+ await expect(page.locator('#edit-summary')).toHaveValue('第一条未保存的摘要');
+});
+test('polling recovers its error banner without reloading unchanged records',async({page})=>{
+ let stateRequests=0;page.on('request',request=>{if(new URL(request.url()).pathname==='/api/state')stateRequests++});
+ await page.goto('/');await expect(page.locator('.record-main')).toBeVisible();
+ await page.route('**/api/revision',route=>route.abort());
+ await expect(page.locator('.connection-error')).toBeVisible({timeout:7000});
+ await page.unroute('**/api/revision');
+ await expect(page.locator('.connection-error')).toHaveCount(0,{timeout:7000});
+ expect(stateRequests).toBe(1);
+});
+test('mini player keeps playback and seeking across modal changes and remembers speed',async({page,request})=>{
+ const samples=16000*20,bytes=Buffer.alloc(44+samples*2);
+ bytes.write('RIFF');bytes.writeUInt32LE(bytes.length-8,4);bytes.write('WAVE',8);bytes.write('fmt ',12);bytes.writeUInt32LE(16,16);bytes.writeUInt16LE(1,20);bytes.writeUInt16LE(1,22);bytes.writeUInt32LE(16000,24);bytes.writeUInt32LE(32000,28);bytes.writeUInt16LE(2,32);bytes.writeUInt16LE(16,34);bytes.write('data',36);bytes.writeUInt32LE(samples*2,40);
+ const imported=await request.post('/api/import-audio',{headers,data:{audio:{name:'静音回放验收.wav',data:bytes.toString('base64')},autoAnalyze:false,autoTranscribe:false}});
+ expect(imported.ok()).toBeTruthy();const id=(await imported.json()).record.id;
+ await page.goto('/');await page.locator(`[data-open="${id}"]`).first().click();
+ await expect.poll(()=>page.locator('#record-audio').evaluate(el=>el.readyState)).toBeGreaterThan(0);
+ await page.locator('#audio-play').click();
+ await expect.poll(()=>page.locator('#record-audio').evaluate(el=>el.paused)).toBe(false);
+ await page.locator('#audio-speed').click();await expect(page.locator('#audio-speed')).toHaveText('1.25×');
+ await page.locator('#audio-seek').evaluate(el=>{el.value='5';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}))});
+ await page.locator('[data-tab="raw"]').click();
+ await expect.poll(()=>page.locator('#record-audio').evaluate(el=>el.currentTime)).toBeGreaterThanOrEqual(5);
+ await page.getByRole('button',{name:'关闭',exact:true}).click();
+ await expect(page.locator('#mini-player')).toBeVisible();
+ await page.locator('#mini-play').click();
+ await expect.poll(()=>page.locator('#record-audio').evaluate(el=>el.paused)).toBe(true);
+ await page.locator(`[data-open="${id}"]`).first().click();
+ await expect.poll(()=>page.locator('#record-audio').evaluate(el=>el.currentTime)).toBeGreaterThanOrEqual(5);
+ await page.getByRole('button',{name:'关闭',exact:true}).click();await page.locator('#mini-close').click();
+ await expect(page.locator('#mini-player')).not.toBeVisible();
+ expect(await page.locator('#record-audio').getAttribute('src')).toBeNull();
+ await page.reload();await page.locator(`[data-open="${id}"]`).first().click();
+ await expect(page.locator('#audio-speed')).toHaveText('1.25×');
+});
+test('archive includes all review periods and exports their source text',async({page,request})=>{
+ const common={recordCount:1,dayCount:1,model:'fallback',generatedAt:'2026-10-03T02:00:00Z'};
+ const history={digests:{'2026-10-03':{...common,date:'2026-10-03',text:'隔离的日回顾'}},weeklies:{'2026-09-28':{...common,start:'2026-09-28',end:'2026-10-04',text:'隔离的周回顾'}},monthlies:{'2026-10':{...common,month:'2026-10',start:'2026-10-01',end:'2026-10-31',text:'隔离的月回顾'}},yearlies:{'2026':{...common,year:'2026',start:'2026-01-01',end:'2026-12-31',text:'隔离的年回顾'}}};
+ expect((await request.post('/api/restore',{headers,data:{version:2,records:[record],...history}})).ok()).toBeTruthy();
+ await page.goto('/');await page.locator('.sidebar [data-page="recaps"]').click();
+ await expect(page.locator('.recap-item')).toHaveCount(4);
+ const download=page.waitForEvent('download');await page.locator('[data-recap-export-all]').click();
+ const file=await download;const stream=await file.createReadStream();let content='';for await(const chunk of stream)content+=chunk;
+ for(const group of Object.values(history))expect(content).toContain(Object.values(group)[0].text);
+});

@@ -20,9 +20,45 @@ async function fixture(t,{aiEndpoint='http://127.0.0.1:1/api/chat'}={}){
  const child=spawn(process.execPath,['server.mjs'],{cwd:root,env:{...process.env,SHENGJI_PORT:String(port),SHENGJI_TOKEN:token,SHENGJI_DATA_DIR:data,SHENGJI_INBOX:inbox,SHENGJI_AI_ENDPOINT:aiEndpoint},stdio:['ignore','pipe','pipe']});let logs='';child.stdout.on('data',c=>logs+=c);child.stderr.on('data',c=>logs+=c);
  t.after(async()=>{child.kill('SIGTERM');await Promise.race([new Promise(resolve=>child.once('exit',resolve)),sleep(2000)]);if(child.exitCode===null)child.kill('SIGKILL');await fs.rm(dir,{recursive:true,force:true});});
  const base=`http://127.0.0.1:${port}`;
- const api=async(route,{method='GET',body,headers={}}={})=>{const response=await fetch(base+route,{method,headers:{'x-shengji-token':token,'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,body:await response.json()};};
- for(let i=0;i<100;i++){try{if((await api('/api/health')).status===200)return{api,data,inbox,dir};}catch{}await sleep(30);}throw new Error('Isolated server startup failed: '+logs);
+ const api=async(route,{method='GET',body,headers={}}={})=>{const response=await fetch(base+route,{method,headers:{'x-shengji-token':token,'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,headers:response.headers,body:await response.json()};};
+ for(let i=0;i<100;i++){try{if((await api('/api/health')).status===200)return{api,data,inbox,dir,base};}catch{}await sleep(30);}throw new Error('Isolated server startup failed: '+logs);
 }
+test('streamed backup keeps a single library snapshot during concurrent edits',async t=>{
+ const {api,base}=await fixture(t);
+ const bytes=Buffer.alloc(4*1024*1024);bytes.write('RIFF',0);bytes.write('WAVE',8);
+ const audio=await api('/api/import-audio',{method:'POST',body:{audio:{name:'snapshot.wav',data:bytes.toString('base64')},autoAnalyze:false,autoTranscribe:false}});
+ assert.equal(audio.status,200);
+ const old=await api('/api/import',{method:'POST',body:{text:'开始备份前的原文。',autoAnalyze:false}});
+ const response=await new Promise((resolve,reject)=>{const req=http.get(base+'/api/backup',{headers:{'x-shengji-token':'isolated-test-token'}},res=>{res.pause();resolve(res)});req.on('error',reject)});
+ t.after(()=>response.destroy());
+ const chunks=[];const completed=new Promise((resolve,reject)=>{response.on('data',chunk=>chunks.push(chunk));response.on('end',resolve);response.on('error',reject)});
+ const edit=await api('/api/records',{method:'PUT',body:{...old.body.record,transcript:'备份开始后修改的原文。'}});
+ assert.equal(edit.status,200);
+ response.resume();await completed;
+ const backup=JSON.parse(Buffer.concat(chunks).toString());
+ const saved=backup.records.find(r=>r.id===old.body.record.id);
+ assert.equal(saved.transcript,'开始备份前的原文。');
+ assert.equal(backup.originals[crypto.createHash('sha256').update(saved.transcript).digest('hex')],saved.transcript);
+ assert.equal(Object.keys(backup.audioFiles).length,1);
+});
+test('state negotiates compression and revision reflects saved changes without loading records',async t=>{
+ const {api}=await fixture(t);
+ const compressed=await api('/api/state',{headers:{'Accept-Encoding':'gzip'}});
+ assert.equal(compressed.headers.get('content-encoding'),'gzip');
+ assert.equal(compressed.headers.get('vary'),'Accept-Encoding');
+ for(const encoding of ['identity','gzip;q=0, identity']){
+  const plain=await api('/api/state',{headers:{'Accept-Encoding':encoding}});
+  assert.equal(plain.headers.get('content-encoding'),null);
+  assert.deepEqual(plain.body.records,compressed.body.records);
+ }
+ assert.equal((await api('/api/revision',{headers:{'x-shengji-token':'wrong'}})).status,401);
+ const before=(await api('/api/revision')).body;
+ assert.equal('records' in before,false);
+ await api('/api/import',{method:'POST',body:{text:'验证轻量轮询能发现新记录。',autoAnalyze:false}});
+ const after=(await api('/api/revision')).body;
+ assert.ok(after.revision>before.revision);
+ assert.equal(after.revision,(await api('/api/state')).body.revision);
+});
 test('isolated local API: watcher, raw source, dedup, auth, revision and atomic restore',async t=>{
  const {api,data,inbox}=await fixture(t);
  assert.equal((await api('/api/state',{headers:{'x-shengji-token':'wrong'}})).status,401);
