@@ -20,7 +20,6 @@ rm -rf "$RES_DIR/app/connectors"
 cp -R connectors "$RES_DIR/app/connectors"
 mkdir -p "$RES_DIR/app/native"
 cp native/transcribe_audio.py "$RES_DIR/app/native/"
-if [[ -f store.mjs ]]; then cp store.mjs "$RES_DIR/app/"; fi
 swiftc -O native/Shengji.swift -o "$APP_DIR/Contents/MacOS/Shengji" -framework AppKit -framework WebKit
 ICON_DIR="$(mktemp -d)/Shengji.iconset"
 mkdir -p "$ICON_DIR"

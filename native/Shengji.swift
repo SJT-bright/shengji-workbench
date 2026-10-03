@@ -83,12 +83,6 @@ final class ShengjiApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, W
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        pendingFiles.append(contentsOf: filenames.map { URL(fileURLWithPath: $0) })
-        sender.reply(toOpenOrPrint: .success)
-        showWindow()
-        importNextFile()
-    }
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             if url.isFileURL { pendingFiles.append(url) }
@@ -123,6 +117,7 @@ final class ShengjiApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, W
                 if audio { payload["audio"] = ["name": file.lastPathComponent, "data": data.base64EncodedString()] }
                 else {
                     guard let text = String(data: data, encoding: .utf8) else { throw NSError(domain: "Shengji", code: 3, userInfo: [NSLocalizedDescriptionKey: "文字文件需要 UTF-8 编码"]) }
+                    guard text.count <= 500_000 else { throw NSError(domain: "Shengji", code: 4, userInfo: [NSLocalizedDescriptionKey: "文字超过 50 万字符，请拆分后导入"]) }
                     payload["text"] = text; payload["filename"] = file.lastPathComponent
                 }
                 var request = URLRequest(url: self.baseURL.appendingPathComponent(audio ? "api/import-audio" : "api/import"))
@@ -244,10 +239,12 @@ final class ShengjiApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, W
               let body = message.body as? [String: Any], let action = body["action"] as? String else { return }
         switch action {
         case "copyText":
-            guard let text = body["text"] as? String, text.count <= 2000 else { return }
+            guard let text = body["text"] as? String else { return }
+            guard text.count <= 2000 else { dispatchEvent("shengji-model", detail: ["error": "内容超出复制上限"]); return }
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
         case "share":
-            guard let content = body["content"] as? String, content.count <= 700000 else { return }
+            guard let content = body["content"] as? String else { return }
+            guard content.count <= 700000 else { dispatchEvent("shengji-model", detail: ["error": "内容超出分享上限"]); return }
             let picker = NSSharingServicePicker(items: [content])
             picker.show(relativeTo: NSRect(x: webView.bounds.midX, y: webView.bounds.midY, width: 1, height: 1), of: webView, preferredEdge: .minY)
         case "chooseFolder":
@@ -264,7 +261,10 @@ final class ShengjiApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, W
         case "openFolder":
             let path = (body["path"] as? String) ?? defaultInbox.path
             let url = URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
-            guard folders.contains(url.path) else { return }
+            guard folders.contains(url.path) else {
+                DispatchQueue.main.async { self.dispatchEvent("shengji-model", detail: ["error": "该文件夹未在应用内授权，请先在「自动整理设置」中重新选择"]) }
+                return
+            }
             NSWorkspace.shared.open(url)
         case "export":
             guard let content = body["content"] as? String else { return }
